@@ -137,7 +137,7 @@ const fillCoverageGaps = async ({ requirements, research, questions, coverage, c
   if (!requirements || typeof requirements !== 'object' || Array.isArray(requirements)) {
     throw new Error('requirements must be an object returned by extractRequirements().');
   }
-  if (!client && !process.env.OPENROUTER_API_KEY) {
+  if (!client && !process.env.GEMINI_API_KEY) {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
   }
   const researchData = collectResearch(research);

@@ -72,8 +72,8 @@ const normalizeStringArray = (value, field) => {
  * or an invalid model response.
  */
 const extractRequirements = async ({ jobDescription, client } = {}) => {
-  // 1. Missing OPENROUTER_API_KEY
-  if (!client && !process.env.OPENROUTER_API_KEY) {
+  // 1. Missing GEMINI_API_KEY
+  if (!client && !process.env.GEMINI_API_KEY) {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
   }
 

@@ -56,7 +56,15 @@ Exit codes:
 
 ### Environment
 
-Credentials are read from `backend/.env` and the process environment. The current LLM pipeline uses `OPENROUTER_API_KEY`; do not put credentials in case files or reports. MongoDB credentials are not needed for evaluation.
+Credentials are read from `backend/.env` and the process environment. The LLM pipeline uses `GEMINI_API_KEY`; do not put credentials in case files or reports. MongoDB credentials are not needed for evaluation.
+
+`GEMINI_MODEL` optionally overrides the model id used by the LLM adapter. When it is unset or blank, the adapter uses a built-in default of `gemini-3.5-flash-lite`.
+
+Google Gemini is the primary provider, called through the official `@google/genai` SDK. The pipeline depends on provider-enforced structured output, so the adapter sets `responseMimeType: 'application/json'` and forwards the callers' native Gemini `Schema` objects (already built with `Type`, including `nullable`) as `responseSchema`. The SDK's own retry loop is disabled (`httpOptions.retryOptions.attempts: 1`) so the adapter's single bounded transient retry remains the only retry.
+
+OpenRouter is retained as a fallback provider. It is consulted only when `OPENROUTER_API_KEY` is set **and** the Gemini attempt failed transiently (rate limit, provider down, or timeout). A permanent Gemini failure — a missing, invalid, or unauthorized key, or a rejected request — is surfaced immediately, so a misconfiguration is never hidden behind a second vendor. Delete `OPENROUTER_API_KEY` to make Gemini the only provider.
+
+All model output is still parsed and validated by the existing application-side services; the provider contract is a convenience, not the authority.
 
 ### Local fixture URLs
 
