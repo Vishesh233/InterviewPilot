@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Environment files — never commit real credentials.
+# The negation below only re-includes the placeholder template files.
+.env
+.env.*
+!.env.example
+
+# Logs and temporary output
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE settings
+.vscode/
+.idea/
