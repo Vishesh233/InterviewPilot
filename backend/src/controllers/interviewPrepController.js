@@ -2,7 +2,7 @@ const {
   generateInterviewPrepKit,
 } = require('../services/interviewPrepPipelineService');
 const { assertSafeUrl } = require('../services/urlSecurityService');
-const { MAX_JOB_DESCRIPTION_LENGTH, isBoundedString, isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
+const { MAX_JOB_DESCRIPTION_LENGTH, MAX_JOB_ROLE_LENGTH, isBoundedString, isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
 
 const MAX_INTERVIEW_DAYS = 60;
 
@@ -28,9 +28,10 @@ const generateInterviewPrep = async (req, res, deps = {}) => {
     });
   }
 
-  const { jobDescription, companyUrl, interviewDays } = req.body;
+  const { jobRole, jobDescription, companyUrl, interviewDays } = req.body;
 
   if (
+    !isBoundedString(jobRole, MAX_JOB_ROLE_LENGTH) ||
     !isBoundedString(jobDescription, MAX_JOB_DESCRIPTION_LENGTH) ||
     !isValidCompanyUrl(companyUrl) ||
     !Number.isInteger(interviewDays) ||
@@ -41,13 +42,14 @@ const generateInterviewPrep = async (req, res, deps = {}) => {
       error: {
         code: 'VALIDATION_ERROR',
         message:
-          'jobDescription must be a non-empty string, companyUrl must be a valid HTTP/HTTPS URL, and interviewDays must be an integer between 1 and 60.',
+          'jobRole must be a non-empty string, jobDescription must be a non-empty string, companyUrl must be a valid HTTP/HTTPS URL, and interviewDays must be an integer between 1 and 60.',
       },
     });
   }
 
   try {
     const kit = await generate({
+      jobRole,
       jobDescription,
       companyUrl,
       interviewDays,

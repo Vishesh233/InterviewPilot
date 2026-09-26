@@ -16,11 +16,17 @@ const MIN_INTERVIEW_DAYS = 1;
 const MAX_INTERVIEW_DAYS = 60;
 const {
   MAX_JOB_DESCRIPTION_LENGTH,
+  MAX_JOB_ROLE_LENGTH,
   isBoundedString,
   isPlainObject,
 } = require('./inputValidationService');
 
-const validateInputs = ({ jobDescription, companyUrl, interviewDays, batchFixtureContext } = {}) => {
+const validateInputs = ({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext } = {}) => {
+  // jobRole is optional at this boundary so the evaluate CLI keeps working;
+  // the HTTP API enforces it as required. When supplied it must be valid.
+  if (jobRole !== undefined && !isBoundedString(jobRole, MAX_JOB_ROLE_LENGTH)) {
+    throw new Error(`jobRole must be a non-empty string no longer than ${MAX_JOB_ROLE_LENGTH} characters.`);
+  }
   if (!isBoundedString(jobDescription, MAX_JOB_DESCRIPTION_LENGTH)) {
     throw new Error(`jobDescription must be a non-empty string no longer than ${MAX_JOB_DESCRIPTION_LENGTH} characters.`);
   }
@@ -108,7 +114,7 @@ const uniqueRequirementIds = (requirements) =>
     .map((value) => value.trim())
     .filter((value, index, values) => values.indexOf(value) === index);
 
-const buildFinalKit = ({ jobDescription, companyUrl, interviewDays }, pipelineResult) => {
+const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, pipelineResult) => {
   const { requirements, research, questions, coverage, schedule } = pipelineResult || {};
   if (!isPlainObject(requirements) || !isPlainObject(research) || !Array.isArray(research.sources)) {
     throw new Error('Pipeline returned malformed requirements or research data.');
@@ -134,7 +140,12 @@ const buildFinalKit = ({ jobDescription, companyUrl, interviewDays }, pipelineRe
   const companySummary = safeText(firstSourceText, `Research collected from ${sourceUrl}.`);
 
   return {
-    source: { jobDescription, companyUrl, interviewDays },
+    source: {
+      ...(typeof jobRole === 'string' && jobRole.trim() ? { jobRole: jobRole.trim() } : {}),
+      jobDescription,
+      companyUrl,
+      interviewDays,
+    },
     company_brief: {
       name: companyName,
       summary: companySummary,
@@ -163,9 +174,9 @@ const buildFinalKit = ({ jobDescription, companyUrl, interviewDays }, pipelineRe
  * the existing Appendix A validator shape.
  */
 const generateInterviewPrepKit = async (input = {}, deps = {}) => {
-  const { jobDescription, companyUrl, interviewDays } = input;
+  const { jobRole, jobDescription, companyUrl, interviewDays } = input;
   const batchFixtureContext = input[BATCH_FIXTURE_CONTEXT];
-  validateInputs({ jobDescription, companyUrl, interviewDays, batchFixtureContext });
+  validateInputs({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext });
 
   const extract = deps.extractRequirements || extractRequirements;
   const researchStage = deps.researchCompanyPipeline || researchCompanyPipeline;
@@ -173,16 +184,25 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   const fillGaps = deps.fillCoverageGaps || fillCoverageGaps;
 
   // 1. Extract structured requirements from the job description.
-  const requirements = await runStage('Requirement extraction', () =>
+  const extracted = await runStage('Requirement extraction', () =>
     extract({ jobDescription })
   );
-  if (!isPlainObject(requirements) || !hasExtractedRequirements(requirements)) {
+  if (!isPlainObject(extracted) || !hasExtractedRequirements(extracted)) {
     throw pipelineValidationError(
       'Requirement extraction',
       'INSUFFICIENT_JOB_DESCRIPTION',
       'The job description did not provide enough supported information.'
     );
   }
+
+  // 1b. The caller-supplied job role is the canonical target role for every
+  //     later stage: the question prompt, deterministic coverage, gap filling,
+  //     and the final role.requirements list all read requirements.role.
+  //     It is applied only AFTER the gate above so a thin JD cannot be masked
+  //     by a valid role, and the extracted object is copied rather than mutated
+  //     because extraction stubs/fixtures may be shared between calls.
+  const canonicalRole = typeof jobRole === 'string' && jobRole.trim() ? jobRole.trim() : '';
+  const requirements = canonicalRole ? { ...extracted, role: canonicalRole } : extracted;
 
   // 2. Research the public company page (homepage + a few relevant pages).
   const research = await runStage('Company research', () =>

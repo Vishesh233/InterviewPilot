@@ -11,6 +11,7 @@ const {
 
 const buildValidKitBody = () => ({
   source: {
+    jobRole: 'Junior Backend Developer',
     jobDescription: 'Junior Backend Developer with Node.js and MongoDB.',
     companyUrl: 'https://example.com/',
   },
@@ -324,3 +325,56 @@ describe('interview prep kit model schema', () => {
   });
 });
 
+
+
+describe('kit source.jobRole persistence', () => {
+  it('accepts and persists an explicit source.jobRole', async (t) => {
+    let saved = null;
+    withModelStubs(t, {
+      create: async (doc) => {
+        saved = doc;
+        return { toObject: () => ({ _id: 'kit-1', ...doc }) };
+      },
+    });
+    const req = { userId: 'user-A', body: buildValidKitBody() };
+    const res = mockResponse();
+    await createKit(req, res);
+    assert.equal(res.statusCode, 201);
+    assert.equal(saved.source.jobRole, 'Junior Backend Developer');
+    assert.equal(res.body.source.jobRole, 'Junior Backend Developer');
+  });
+
+  it('still creates kits saved before the Job role field existed', async (t) => {
+    let saved = null;
+    withModelStubs(t, {
+      create: async (doc) => {
+        saved = doc;
+        return { toObject: () => ({ _id: 'kit-1', ...doc }) };
+      },
+    });
+    const body = buildValidKitBody();
+    delete body.source.jobRole;
+    const res = mockResponse();
+    await createKit({ userId: "user-A", body }, res);
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body.error));
+    assert.equal(saved.source.jobRole, undefined);
+  });
+
+  it('rejects an invalid source.jobRole without touching the model', async (t) => {
+    let called = false;
+    withModelStubs(t, {
+      create: async () => {
+        called = true;
+        throw new Error('should not be called');
+      },
+    });
+    const body = buildValidKitBody();
+    body.source.jobRole = '   ';
+    const res = mockResponse();
+    await createKit({ userId: "user-A", body }, res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error.code, 'KIT_VALIDATION_FAILED');
+    assert.ok(res.body.error.details.some((detail) => detail.path === '$.source.jobRole'));
+    assert.equal(called, false);
+  });
+});

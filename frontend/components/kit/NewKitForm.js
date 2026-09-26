@@ -13,7 +13,7 @@ import { Icon } from '@/components/ui/Icon';
 export default function NewKitForm() {
   const router = useRouter();
   const { token, loading: authLoading } = useAuth();
-  const [form, setForm] = useState({ jobDescription: '', companyUrl: '', interviewDays: 7 });
+  const [form, setForm] = useState({ jobRole: '', jobDescription: '', companyUrl: '', interviewDays: 7 });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -30,6 +30,8 @@ export default function NewKitForm() {
 
   const validate = () => {
     const next = {};
+    if (!form.jobRole.trim()) next.jobRole = 'Add the job role so we can target the right position.';
+    else if (form.jobRole.length > 200) next.jobRole = 'Keep the job role under 200 characters.';
     if (!form.jobDescription.trim()) next.jobDescription = 'Add the job description so we can ground the preparation.';
     else if (form.jobDescription.length > 50000) next.jobDescription = 'Keep the job description under 50,000 characters.';
     try {
@@ -48,7 +50,7 @@ export default function NewKitForm() {
     setGenerating(true);
     setStage(1);
     try {
-      const generated = await api.generateKit(token, { jobDescription: form.jobDescription, companyUrl: form.companyUrl.trim(), interviewDays: form.interviewDays });
+      const generated = await api.generateKit(token, { jobRole: form.jobRole.trim(), jobDescription: form.jobDescription, companyUrl: form.companyUrl.trim(), interviewDays: form.interviewDays });
       const saved = await api.createKit(token, kitFromPipeline(form, generated));
       router.push(`/kits/${encodeURIComponent(saved._id || saved.id)}`);
     } catch (requestError) {
@@ -66,6 +68,7 @@ export default function NewKitForm() {
 function FormFields({ errors, form, onSubmit, onUpdate, onCancel, error }) {
   return <form className="mt-9 space-y-7" onSubmit={onSubmit} noValidate>
     {error && <Alert title="Generation could not be completed">{error}</Alert>}
+    <div><label className="field-label" htmlFor="jobRole">Job role <span className="font-normal text-muted">(required)</span></label><input className={`field-input ${errors.jobRole ? 'border-[#c96c61]' : ''}`} id="jobRole" maxLength={200} name="jobRole" onChange={onUpdate} placeholder="e.g. Backend Developer" type="text" value={form.jobRole} />{errors.jobRole && <p className="mt-2 text-xs text-[#a24a3f]">{errors.jobRole}</p>}</div>
     <div><label className="field-label" htmlFor="jobDescription">Job description <span className="font-normal text-muted">(required)</span></label><textarea className={`field-input min-h-[240px] resize-y ${errors.jobDescription ? 'border-[#c96c61]' : ''}`} id="jobDescription" maxLength={50000} name="jobDescription" onChange={onUpdate} placeholder="Paste the full job description here…" value={form.jobDescription} /><div className="mt-2 flex justify-between gap-3 text-xs text-muted"><span>{errors.jobDescription || 'More context helps us ground every question.'}</span><span>{form.jobDescription.length.toLocaleString()} / 50,000</span></div></div>
     <div><label className="field-label" htmlFor="companyUrl">Company URL <span className="font-normal text-muted">(required)</span></label><input className={`field-input ${errors.companyUrl ? 'border-[#c96c61]' : ''}`} id="companyUrl" name="companyUrl" onChange={onUpdate} placeholder="https://company.com" type="url" value={form.companyUrl} />{errors.companyUrl && <p className="mt-2 text-xs text-[#a24a3f]">{errors.companyUrl}</p>}</div>
     <div><div className="flex items-center justify-between gap-4"><label className="field-label" htmlFor="interviewDays">Interview days</label><Badge>1–60 days</Badge></div><input className={`field-input max-w-[180px] ${errors.interviewDays ? 'border-[#c96c61]' : ''}`} id="interviewDays" max="60" min="1" name="interviewDays" onChange={onUpdate} step="1" type="number" value={form.interviewDays} />{errors.interviewDays && <p className="mt-2 text-xs text-[#a24a3f]">{errors.interviewDays}</p>}</div>

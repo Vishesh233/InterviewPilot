@@ -1157,7 +1157,7 @@ describe('authentication and safe production error responses', () => {
   });
 
   it('returns safe API errors for insufficient input, rate limits, and internal failures', async () => {
-    const input = { jobDescription: 'Backend role', companyUrl: 'https://example.com', interviewDays: 1 };
+    const input = { jobRole: 'Backend Developer', jobDescription: 'Backend role', companyUrl: 'https://example.com', interviewDays: 1 };
     const insufficient = mockResponse();
     const insufficientError = Object.assign(new Error('internal C:\\secret\\file'), {
       code: 'INSUFFICIENT_JOB_DESCRIPTION',
@@ -1355,5 +1355,94 @@ describe('deterministic coverage includes the role and seniority requirements', 
     });
     assert.equal(result.coveredRequirements.length, 2, 'the role must be counted once, not twice');
     assert.equal(result.coveragePercent, 100);
+  });
+});
+
+
+// The "Job role" field is a first-class input: required by the HTTP API,
+// canonical for every downstream stage, and persisted on source.jobRole.
+describe('explicit job role input', () => {
+  const baseInput = () => ({
+    jobRole: 'Backend Developer',
+    jobDescription: 'Backend team building Node.js services with MongoDB.',
+    companyUrl: 'https://example.com/',
+    interviewDays: 3,
+  });
+
+  const extractedRequirements = () => ({
+    role: 'Data Analyst',
+    seniority: 'senior',
+    mustHaveSkills: ['Node.js'],
+    niceToHaveSkills: [],
+    responsibilities: [],
+    qualifications: [],
+    interviewSignals: [],
+  });
+
+  const roleDeps = (overrides = {}) => ({
+    extractRequirements: async () => extractedRequirements(),
+    researchCompanyPipeline: async () => ({
+      companyUrl: 'https://example.com/',
+      companyTitle: 'Example',
+      sources: [{ url: 'https://example.com/', title: 'Example', text: 'Example builds developer tools for engineering teams.' }],
+    }),
+    generateQuestions: async () => ({ questions: [validQuestion()] }),
+    fillCoverageGaps: async ({ questions, coverage }) => ({ questions, coverage }),
+    ...overrides,
+  });
+
+  it('rejects a missing, empty, or oversized job role at the API boundary', async () => {
+    for (const jobRole of ['__absent__', '', '   ', null, 'x'.repeat(201)]) {
+      const body = baseInput();
+      if (jobRole === '__absent__') delete body.jobRole;
+      else body.jobRole = jobRole;
+      const res = mockResponse();
+      await generateInterviewPrep({ body }, res, {
+        generateInterviewPrepKit: async () => assert.fail('pipeline must not run without a valid job role'),
+      });
+      assert.equal(res.statusCode, 400, 'expected 400 for jobRole=' + JSON.stringify(jobRole));
+      assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+    }
+  });
+
+  it('accepts a valid job role and passes it to the pipeline', async () => {
+    let received = null;
+    const res = mockResponse();
+    await generateInterviewPrep({ body: baseInput() }, res, {
+      generateInterviewPrepKit: async (input) => { received = input; return { accepted: true }; },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(received.jobRole, 'Backend Developer');
+    assert.equal(received.jobDescription, baseInput().jobDescription);
+  });
+
+  it('uses the supplied role as the canonical target role', async () => {
+    const input = baseInput();
+    const result = await generateInterviewPrepKit(input, roleDeps());
+    assert.equal(result.requirements.role, 'Backend Developer', 'the JD-extracted role must not win');
+    assert.notEqual(result.requirements.role, 'Data Analyst');
+
+    const kit = buildFinalKit(input, result);
+    assert.equal(kit.source.jobRole, 'Backend Developer');
+    assert.equal(kit.role.title, 'Backend Developer');
+    assert.ok(kit.role.requirements.some((entry) => entry.id === 'Backend Developer'));
+    const reported = [...kit.coverage.coveredRequirements, ...kit.coverage.missingRequirements];
+    assert.ok(reported.includes('Backend Developer'), 'coverage must report the canonical role');
+    const revalidated = validateKitStructure(kit);
+    assert.equal(revalidated.valid, true, JSON.stringify(revalidated.errors));
+  });
+
+  it('does not mutate the extraction result shared with callers', async () => {
+    const shared = extractedRequirements();
+    await generateInterviewPrepKit(baseInput(), roleDeps({ extractRequirements: async () => shared }));
+    assert.equal(shared.role, 'Data Analyst');
+  });
+
+  it('keeps JD extraction as the fallback when no role is supplied', async () => {
+    const body = baseInput();
+    delete body.jobRole;
+    const result = await generateInterviewPrepKit(body, roleDeps());
+    assert.equal(result.requirements.role, 'Data Analyst');
+    assert.equal(buildFinalKit(body, result).source.jobRole, undefined);
   });
 });

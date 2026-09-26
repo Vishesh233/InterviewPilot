@@ -23,6 +23,8 @@ The input file is a UTF-8 JSON array. Each case must use exactly these fields:
 
 The evaluator processes cases sequentially, preserves input order, and calls the same `generateInterviewPrepKit` pipeline as the web API. It does not connect to MongoDB. Every successful kit is checked with the existing `kitStructureValidator` before it is written. Partial company research remains successful when the pipeline can still produce a valid kit.
 
+The web API (`POST /api/interview-prep`) additionally requires `jobRole`: a non-empty string of at most 200 characters. It is stored as `source.jobRole` on the kit and, when present, it is the canonical target role the pipeline uses in place of the role inferred from the job description. Evaluator cases do not send it, so there the pipeline keeps falling back to extraction from `jd`. Kits saved before this field existed have no `source.jobRole` and remain valid.
+
 The output is pretty-printed UTF-8 JSON:
 
 ```json

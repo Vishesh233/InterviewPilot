@@ -10,6 +10,7 @@ const {
   isSafeIdentifier,
   MAX_TEXT_LENGTH,
   MAX_JOB_DESCRIPTION_LENGTH,
+  MAX_JOB_ROLE_LENGTH,
 } = require('./inputValidationService');
 
 const REQUIRED_TOP_LEVEL = [
@@ -124,6 +125,16 @@ const validateKitStructure = (kit) => {
           `source.interviewDays must be an integer between ${MIN_INTERVIEW_DAYS} and ${MAX_INTERVIEW_DAYS} when present.`,
           'INVALID_VALUE'
         );
+      }
+
+      // Optional for backward compatibility: kits saved before the Job role
+      // field existed have no source.jobRole and must keep loading normally.
+      if (kit.source.jobRole !== undefined) {
+        if (!isNonEmptyString(kit.source.jobRole)) {
+          push('$.source.jobRole', 'source.jobRole must be a non-empty string when present.', 'MISSING_FIELD');
+        } else if (kit.source.jobRole.length > MAX_JOB_ROLE_LENGTH) {
+          push('$.source.jobRole', 'source.jobRole must be no longer than ' + MAX_JOB_ROLE_LENGTH + ' characters.', 'INVALID_VALUE');
+        }
       }
     }
   }

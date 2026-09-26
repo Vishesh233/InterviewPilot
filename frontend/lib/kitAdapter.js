@@ -4,7 +4,15 @@ export function kitFromPipeline(input, result) {
   const requirements = result?.requirements || {};
   const research = result?.research || {};
   const questions = Array.isArray(result?.questions) ? result.questions : [];
-  const roleTitle = nonEmpty(requirements.role) ? requirements.role.trim() : 'Role not specified';
+  // The supplied job role is canonical; the extracted role is only a fallback.
+  // role.title and the role requirement entry below must come from this same
+  // value so the UI list stays consistent with the backend coverage arrays.
+  const canonicalRole = nonEmpty(input.jobRole)
+    ? input.jobRole.trim()
+    : nonEmpty(requirements.role)
+      ? requirements.role.trim()
+      : '';
+  const roleTitle = canonicalRole || 'Role not specified';
   const requirementEntries = [
     ...(Array.isArray(requirements.mustHaveSkills) ? requirements.mustHaveSkills.map((id) => ({ id, kind: 'must_have' })) : []),
     ...(Array.isArray(requirements.niceToHaveSkills) ? requirements.niceToHaveSkills.map((id) => ({ id, kind: 'nice_to_have' })) : []),
@@ -12,7 +20,7 @@ export function kitFromPipeline(input, result) {
     ...(Array.isArray(requirements.qualifications) ? requirements.qualifications.map((id) => ({ id, kind: 'qualification' })) : []),
     ...(Array.isArray(requirements.interviewSignals) ? requirements.interviewSignals.map((id) => ({ id, kind: 'interview_signal' })) : []),
   ];
-  if (nonEmpty(requirements.role)) requirementEntries.unshift({ id: requirements.role.trim(), kind: 'role' });
+  if (canonicalRole) requirementEntries.unshift({ id: canonicalRole, kind: 'role' });
   if (nonEmpty(requirements.seniority)) requirementEntries.push({ id: requirements.seniority.trim(), kind: 'seniority' });
   const seenRequirementIds = new Set();
   const dedupedRequirementEntries = requirementEntries.filter((entry) => {
@@ -24,7 +32,12 @@ export function kitFromPipeline(input, result) {
   const firstText = sources.find((source) => nonEmpty(source.text))?.text;
   const companyName = nonEmpty(research.companyTitle) ? research.companyTitle.trim() : (() => { try { return new URL(input.companyUrl).hostname; } catch { return 'Company workspace'; } })();
   return {
-    source: { jobDescription: input.jobDescription.trim(), companyUrl: input.companyUrl.trim(), interviewDays: input.interviewDays },
+    source: {
+      ...(nonEmpty(input.jobRole) ? { jobRole: input.jobRole.trim() } : {}),
+      jobDescription: input.jobDescription.trim(),
+      companyUrl: input.companyUrl.trim(),
+      interviewDays: input.interviewDays,
+    },
     company_brief: {
       name: companyName,
       summary: firstText || `Research collected from ${input.companyUrl.trim()}.`,
