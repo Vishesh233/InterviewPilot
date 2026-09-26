@@ -11,6 +11,7 @@ const { fillCoverageGaps } = require('./gapFillService');
 const { createSchedule } = require('./scheduleService');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
+const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
 
 const MIN_INTERVIEW_DAYS = 1;
 const MAX_INTERVIEW_DAYS = 60;
@@ -137,7 +138,10 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
   const firstSourceText = research.sources.find((source) => source.text)?.text;
   const sourceUrl = research.companyUrl;
   const companyName = normalizeTitle(research.companyTitle, new URL(sourceUrl).hostname || roleTitle);
-  const companySummary = safeText(firstSourceText, `Research collected from ${sourceUrl}.`);
+  const companySummary = safeText(
+    sanitizeCompanyBriefText(firstSourceText),
+    `Research collected from ${sourceUrl}.`
+  );
 
   return {
     source: {

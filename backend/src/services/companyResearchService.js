@@ -9,12 +9,15 @@ const {
   DEFAULT_TIMEOUT_MS,
   DEFAULT_MAX_RESPONSE_BYTES,
 } = require('./urlSecurityService');
+const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
 
 const MAX_TEXT_LENGTH = 20_000;
 const MIN_USEFUL_TEXT_LENGTH = 40;
 const MAX_TITLE_LENGTH = 300;
-// Elements that never contain readable page content.
-const NON_CONTENT_TAGS = 'script|style|noscript|svg|iframe|template|head';
+// Elements that never contain readable page content. Navigation/footer/aside
+// blocks and form controls are structural chrome: their labels are the bulk of
+// the "scraped noise" that used to end up in the company brief.
+const NON_CONTENT_TAGS = 'script|style|noscript|svg|iframe|template|head|nav|footer|aside|button|select|option';
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ', '#39': "'" };
 
@@ -120,7 +123,10 @@ const researchCompany = async ({
   }
 
   const title = extractTitle(html);
-  const text = extractText(html).slice(0, MAX_TEXT_LENGTH);
+  // Clean the extracted page text deterministically before it is used anywhere:
+  // the Company Brief, the research payload returned to clients, and the text
+  // the existing LLM stages read.
+  const text = sanitizeCompanyBriefText(extractText(html).slice(0, MAX_TEXT_LENGTH));
   if (!text) {
     throw researchError('RESEARCH_NO_READABLE_TEXT', 'The company page contained no useful readable text.', 422);
   }
