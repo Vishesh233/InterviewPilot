@@ -15,7 +15,8 @@ const { researchCompanyPipeline } = require('../src/services/companyResearchPipe
 const { generateContent, LlmError, MAX_LLM_RESPONSE_LENGTH, DEFAULT_GEMINI_MODEL, getGeminiModel } = require('../src/services/geminiClient');
 const { extractRequirements } = require('../src/services/requirementExtractionService');
 const { generateQuestions } = require('../src/services/questionGenerationService');
-const { generateInterviewPrepKit } = require('../src/services/interviewPrepPipelineService');
+const { checkCoverage } = require('../src/services/coverageService');
+const { generateInterviewPrepKit, buildFinalKit } = require('../src/services/interviewPrepPipelineService');
 const { validateKitStructure } = require('../src/services/kitStructureValidator');
 const builder = require('../src/services/kitBuilderService');
 const practice = require('../src/services/practiceService');
@@ -937,6 +938,9 @@ describe('pipeline assignment edge cases', () => {
     const result = await generateInterviewPrepKit(
       { jobDescription: 'Backend role with Node.js', companyUrl: 'https://example.com/', interviewDays: 1 },
       successfulDeps({
+        // References nothing at all, so every requirement is a real gap. The role
+        // and seniority are requirements too and must be reported as uncovered
+        // rather than silently omitted from the coverage result.
         generateQuestions: async () => ({ questions: [validQuestion({ requirementRefs: [] })] }),
         fillCoverageGaps: async ({ questions }) => ({
           questions,
@@ -944,7 +948,8 @@ describe('pipeline assignment edge cases', () => {
         }),
       })
     );
-    assert.deepEqual(result.coverage.missingRequirements, ['Node.js']);
+    assert.deepEqual(result.coverage.missingRequirements, ['Backend Engineer', 'junior', 'Node.js']);
+    assert.deepEqual(result.coverage.coveredRequirements, []);
     assert.equal(result.coverage.coveragePercent, 0);
   });
 
@@ -1188,3 +1193,167 @@ describe('authentication and safe production error responses', () => {
   });
 });
 
+
+// Regression tests for the deterministic coverage bug where a role requirement
+// referenced by a question (e.g. "Backend Developer" in a question's
+// requirementRefs / "covers" list) was reported as neither covered nor missing,
+// so the UI rendered it as a Gap while coveragePercent was computed over a
+// smaller denominator than the number of requirements displayed.
+describe('deterministic coverage includes the role and seniority requirements', () => {
+  const requirements = {
+    role: 'Backend Developer',
+    seniority: 'senior',
+    mustHaveSkills: ['MongoDB', 'database integrations', 'building scalable backend services'],
+    niceToHaveSkills: ['Kubernetes'],
+    responsibilities: [],
+    qualifications: [],
+    interviewSignals: [],
+  };
+
+  it('marks a role requirement referenced by a question as covered', () => {
+    // The exact production symptom: Q2 lists "Backend Developer" in its
+    // requirementRefs, so the role must be reported as covered.
+    const questions = [
+      {
+        id: 'q1',
+        question: 'How do you index MongoDB collections?',
+        requirementRefs: ['MongoDB', 'database integrations'],
+      },
+      {
+        id: 'q2',
+        question: 'What strategies do you use for MongoDB database integrations when building scalable backend services?',
+        requirementRefs: ['MongoDB', 'database integrations', 'building scalable backend services', 'Backend Developer'],
+      },
+    ];
+
+    const result = checkCoverage({ requirements, questions });
+
+    assert.ok(result.coveredRequirements.includes('Backend Developer'), 'the referenced role must be covered');
+    assert.ok(!result.missingRequirements.includes('Backend Developer'), 'a covered role must not be reported as a gap');
+    // 'senior' is genuinely unreferenced, so it is a real gap rather than being
+    // silently dropped from both lists.
+    assert.deepEqual(result.missingRequirements, ['senior', 'Kubernetes']);
+    assert.equal(result.coveredRequirements.length + result.missingRequirements.length, 6);
+  });
+
+  it('keeps a genuinely uncovered role requirement uncovered', () => {
+    const questions = [{ id: 'q1', question: 'Explain MongoDB.', requirementRefs: ['MongoDB'] }];
+    const result = checkCoverage({ requirements, questions });
+
+    assert.ok(!result.coveredRequirements.includes('Backend Developer'));
+    assert.ok(result.missingRequirements.includes('Backend Developer'), 'an unreferenced role must stay a gap');
+    assert.equal(result.coveragePercent, 17); // 1 of 6 requirements covered
+  });
+
+
+  it('reports coveragePercent that agrees with covered / total and the gaps', () => {
+    const cases = [
+      { questions: [], expected: 0 },
+      { questions: [{ id: 'q1', question: 'x', requirementRefs: ['MongoDB'] }], expected: 17 },
+      {
+        questions: [{
+          id: 'q1',
+          question: 'x',
+          requirementRefs: ['MongoDB', 'database integrations', 'building scalable backend services', 'Backend Developer'],
+        }],
+        expected: 67,
+      },
+      {
+        questions: [{
+          id: 'q1',
+          question: 'x',
+          requirementRefs: [
+            'Backend Developer',
+            'senior',
+            'MongoDB',
+            'database integrations',
+            'building scalable backend services',
+            'Kubernetes',
+          ],
+        }],
+        expected: 100,
+      },
+    ];
+
+    for (const { questions, expected } of cases) {
+      const result = checkCoverage({ requirements, questions });
+      const total = result.coveredRequirements.length + result.missingRequirements.length;
+
+      // covered + missing must equal the full requirement universe (6 here).
+      assert.equal(total, 6, JSON.stringify(result));
+      // The percentage must be the mathematical ratio, never a hardcoded 100.
+      assert.equal(result.coveragePercent, expected, JSON.stringify(result));
+      assert.equal(
+        result.coveragePercent,
+        Math.round((result.coveredRequirements.length / total) * 100),
+        'coveragePercent must agree with covered / total'
+      );
+      // Gaps must be exactly the requirements no question referenced.
+      assert.equal(result.missingRequirements.length, total - result.coveredRequirements.length);
+      // No requirement may appear in both lists.
+      for (const requirement of result.coveredRequirements) {
+        assert.equal(result.missingRequirements.includes(requirement), false, requirement);
+      }
+    }
+  });
+
+  it('produces a coverage universe identical to the kit role.requirements list', () => {
+    // This invariant is what the UI relies on: the declared requirement set and
+    // the coverage result must describe the same requirements, or the panel
+    // renders a requirement that coverage never classified.
+    const questions = [{
+      id: 'q1',
+      question: 'x',
+      category: 'technical',
+      difficulty: 'medium',
+      why: 'w',
+      expectedAnswerPoints: ['a'],
+      followUps: [],
+      sources: [],
+      requirementRefs: ['Backend Developer', 'MongoDB', 'database integrations', 'building scalable backend services', 'Kubernetes'],
+    }];
+    const result = checkCoverage({ requirements, questions });
+    const kit = buildFinalKit(
+      { jobDescription: 'Backend role', companyUrl: 'https://example.com/', interviewDays: 3 },
+      {
+        requirements,
+        research: {
+          companyUrl: 'https://example.com/',
+          companyTitle: 'Example',
+          sources: [{ url: 'https://example.com/', title: 'Example', text: 'Example builds developer tools.' }],
+        },
+        questions,
+        coverage: result,
+        schedule: { interviewDays: 3, days: [{ day: 1, question_ids: ['q1'] }] },
+      }
+    );
+
+    const declared = kit.role.requirements.map((entry) => entry.id);
+    assert.equal(declared.length, result.coveredRequirements.length + result.missingRequirements.length);
+    assert.deepEqual(
+      [...result.coveredRequirements, ...result.missingRequirements].sort(),
+      [...declared].sort(),
+      'every declared requirement must be classified exactly once'
+    );
+    // Only the genuinely unreferenced seniority is left as a gap.
+    assert.deepEqual(result.missingRequirements, ['senior']);
+  });
+
+  it('de-duplicates a role that is also listed in a requirement array', () => {
+    const duplicated = {
+      role: 'Backend Developer',
+      seniority: null,
+      mustHaveSkills: ['Backend Developer', 'MongoDB'],
+      niceToHaveSkills: [],
+      responsibilities: [],
+      qualifications: [],
+      interviewSignals: [],
+    };
+    const result = checkCoverage({
+      requirements: duplicated,
+      questions: [{ id: 'q1', question: 'x', requirementRefs: ['Backend Developer', 'MongoDB'] }],
+    });
+    assert.equal(result.coveredRequirements.length, 2, 'the role must be counted once, not twice');
+    assert.equal(result.coveragePercent, 100);
+  });
+});

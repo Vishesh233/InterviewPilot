@@ -20,7 +20,14 @@ const buildKit = () => ({
   role: {
     title: 'Junior Backend Developer',
     level: 'junior',
-    requirements: [{ id: 'Node.js' }, { id: 'MongoDB' }],
+    // buildFinalKit.uniqueRequirementIds() puts the role and seniority first, so a
+    // real kit declares them as requirements too.
+    requirements: [
+      { id: 'Junior Backend Developer' },
+      { id: 'junior' },
+      { id: 'Node.js' },
+      { id: 'MongoDB' },
+    ],
   },
   questions: [
     {
@@ -32,7 +39,7 @@ const buildKit = () => ({
       expectedAnswerPoints: ['Loop phases', 'Microtasks'],
       followUps: [],
       sources: [],
-      requirementRefs: ['Node.js'],
+      requirementRefs: ['Node.js', 'Junior Backend Developer'],
       status: 'generated',
       pinned: false,
     },
@@ -45,7 +52,7 @@ const buildKit = () => ({
       expectedAnswerPoints: ['Embed vs reference'],
       followUps: ['When would you embed?'],
       sources: [],
-      requirementRefs: ['MongoDB'],
+      requirementRefs: ['MongoDB', 'junior'],
       status: 'generated',
       pinned: false,
     },
@@ -86,7 +93,7 @@ const buildKit = () => ({
   },
   coverage: {
     coveragePercent: 100,
-    coveredRequirements: ['Node.js', 'MongoDB'],
+    coveredRequirements: ['Junior Backend Developer', 'junior', 'Node.js', 'MongoDB'],
     missingRequirements: [],
   },
 });
@@ -116,7 +123,10 @@ const generatedQuestion = (overrides = {}) => ({
   expectedAnswerPoints: ['Worker threads'],
   followUps: [],
   sources: ['https://example.com/'],
-  requirementRefs: ['Node.js'],
+  // A real replacement may reference the role and seniority, because a real kit
+  // declares them as requirements. Referencing them keeps the fixture fully
+  // covered so these tests never trigger the real gap-fill stage.
+  requirementRefs: ['Node.js', 'Junior Backend Developer', 'junior'],
   ...overrides,
 });
 
@@ -273,17 +283,36 @@ describe('kit builder question editing', () => {
 
   it('recomputes coverage when requirement references change', () => {
     const kit = buildKit();
-    kit.role.requirements = [{ id: 'Node.js' }, { id: 'MongoDB' }, { id: 'Docker' }];
+    // Production-shaped: the declared requirement set includes the role and
+    // seniority, and the existing questions already cover them.
+    kit.role.requirements = [
+      { id: 'Junior Backend Developer' },
+      { id: 'junior' },
+      { id: 'Node.js' },
+      { id: 'MongoDB' },
+      { id: 'Docker' },
+    ];
     kit.questions[3] = { ...kit.questions[3], requirementRefs: ['Docker'] };
-    kit.coverage = { coveragePercent: 100, coveredRequirements: ['Node.js', 'MongoDB', 'Docker'], missingRequirements: [] };
+    kit.coverage = {
+      coveragePercent: 100,
+      coveredRequirements: ['Junior Backend Developer', 'junior', 'Node.js', 'MongoDB', 'Docker'],
+      missingRequirements: [],
+    };
 
     const { kit: nextKit } = builder.editQuestion({
       kit,
       questionId: 'q4',
       changes: { requirementRefs: ['Node.js'] },
     });
-    assert.equal(nextKit.coverage.coveragePercent, 67);
+    // Docker is the only requirement that lost its covering question.
+    assert.equal(nextKit.coverage.coveragePercent, 80);
     assert.deepEqual(nextKit.coverage.missingRequirements, ['Docker']);
+    assert.deepEqual(nextKit.coverage.coveredRequirements, [
+      'Junior Backend Developer',
+      'junior',
+      'Node.js',
+      'MongoDB',
+    ]);
   });
 });
 
@@ -397,11 +426,16 @@ describe('kit builder pin and unpin', () => {
 describe('kit builder regeneration inputs', () => {
   it('derives requirement ids and the generation inputs from the saved kit', () => {
     const kit = buildKit();
-    assert.deepEqual(builder.requirementIdsFromKit(kit), ['Node.js', 'MongoDB']);
+    assert.deepEqual(builder.requirementIdsFromKit(kit), [
+      'Junior Backend Developer',
+      'junior',
+      'Node.js',
+      'MongoDB',
+    ]);
     assert.deepEqual(builder.builderRequirementsFrom(kit), {
       role: 'Junior Backend Developer',
       seniority: 'junior',
-      mustHaveSkills: ['Node.js', 'MongoDB'],
+      mustHaveSkills: ['Junior Backend Developer', 'junior', 'Node.js', 'MongoDB'],
     });
   });
 
@@ -443,7 +477,7 @@ describe('kit builder section regeneration', () => {
     assert.equal(nextKit.questions[0].question, 'What is a Node.js stream?');
     assert.equal(nextKit.questions[0].status, 'generated');
     assert.equal(nextKit.questions[0].pinned, false);
-    assert.deepEqual(nextKit.questions[0].requirementRefs, ['Node.js']);
+    assert.deepEqual(nextKit.questions[0].requirementRefs, ['Node.js', 'Junior Backend Developer', 'junior']);
   });
 
   it('never overwrites pinned or edited content', async () => {
