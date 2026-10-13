@@ -81,6 +81,8 @@ export const api = {
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/questions/${encodeURIComponent(questionId)}/pin`, { method: 'PATCH', token, body: { pinned } }),
   regenerateSection: (token, kitId, category) =>
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/regenerate`, { method: 'POST', token, body: { category } }),
+  generateGapQuestions: (token, kitId) =>
+    apiRequest(`/api/kits/${encodeURIComponent(kitId)}/gaps`, { method: 'POST', token, body: {} }),
   getPractice: (token, kitId) => apiRequest(`/api/kits/${encodeURIComponent(kitId)}/practice`, { token }),
   updatePractice: (token, kitId, flashcardId, changes) =>
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/practice/${encodeURIComponent(flashcardId)}`, { method: 'PATCH', token, body: changes }),

@@ -9,6 +9,14 @@ const { generateQuestions } = require('./questionGenerationService');
 const { checkCoverage } = require('./coverageService');
 const { fillCoverageGaps } = require('./gapFillService');
 const { createSchedule } = require('./scheduleService');
+const { analyzeResumeMatch } = require('./resumeMatchService');
+const { generateResumeQuestions } = require('./resumeQuestionService');
+const { toResumeMetadata } = require('./resumeInputService');
+// MAX_RESUME_TEXT_LENGTH is the single source of truth for the resume length
+// limit. It is imported (never re-declared) so the pipeline can never enforce a
+// different bound than the one resumeTextExtractor/resumeInputService already
+// applied at the API boundary.
+const { MAX_RESUME_TEXT_LENGTH } = require('./resumeTextExtractor');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
 const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
@@ -22,7 +30,7 @@ const {
   isPlainObject,
 } = require('./inputValidationService');
 
-const validateInputs = ({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext } = {}) => {
+const validateInputs = ({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext, resumeText } = {}) => {
   // jobRole is optional at this boundary so the evaluate CLI keeps working;
   // the HTTP API enforces it as required. When supplied it must be valid.
   if (jobRole !== undefined && !isBoundedString(jobRole, MAX_JOB_ROLE_LENGTH)) {
@@ -33,6 +41,15 @@ const validateInputs = ({ jobRole, jobDescription, companyUrl, interviewDays, ba
   }
   if (jobDescription.includes('\u0000')) {
     throw new Error('jobDescription contains an invalid null character.');
+  }
+  // resumeText is optional: when absent the pipeline is exactly the JD-only flow.
+  // It is bounded by MAX_RESUME_TEXT_LENGTH — the same constant the API boundary
+  // already applied in resumeTextExtractor. It deliberately does NOT reuse
+  // MAX_TEXT_LENGTH: that is the generic per-field text cap (20_000) and using it
+  // here rejected every resume between 20_001 and MAX_RESUME_TEXT_LENGTH with a
+  // bare Error, surfacing as a generic HTTP 500 before the LLM was ever reached.
+  if (resumeText !== undefined && !isBoundedString(resumeText, MAX_RESUME_TEXT_LENGTH)) {
+    throw new Error(`resumeText must be a non-empty string no longer than ${MAX_RESUME_TEXT_LENGTH} characters.`);
   }
   try {
     assertSafeUrl(companyUrl, { batchFixtureContext });
@@ -116,7 +133,7 @@ const uniqueRequirementIds = (requirements) =>
     .filter((value, index, values) => values.indexOf(value) === index);
 
 const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, pipelineResult) => {
-  const { requirements, research, questions, coverage, schedule } = pipelineResult || {};
+  const { requirements, research, questions, coverage, schedule, resume, resume_analysis } = pipelineResult || {};
   if (!isPlainObject(requirements) || !isPlainObject(research) || !Array.isArray(research.sources)) {
     throw new Error('Pipeline returned malformed requirements or research data.');
   }
@@ -169,6 +186,10 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
     })),
     schedule,
     coverage,
+    // Additive and optional: present only when a resume was supplied, so the
+    // JD-only response shape is unchanged.
+    ...(isPlainObject(resume) ? { resume } : {}),
+    ...(isPlainObject(resume_analysis) ? { resume_analysis } : {}),
   };
 };
 
@@ -179,13 +200,19 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
  */
 const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   const { jobRole, jobDescription, companyUrl, interviewDays } = input;
+  // Optional, already validated resume payload ({ text, fileName, fileType,
+  // charCount }) normalized by resumeInputService. Absent => pure JD-only flow.
+  const resumeInput = input.resume && typeof input.resume === 'object' && !Array.isArray(input.resume) ? input.resume : null;
+  const resumeText = typeof resumeInput?.text === 'string' && resumeInput.text.trim() ? resumeInput.text : undefined;
   const batchFixtureContext = input[BATCH_FIXTURE_CONTEXT];
-  validateInputs({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext });
+  validateInputs({ jobRole, jobDescription, companyUrl, interviewDays, batchFixtureContext, resumeText });
 
   const extract = deps.extractRequirements || extractRequirements;
   const researchStage = deps.researchCompanyPipeline || researchCompanyPipeline;
   const generate = deps.generateQuestions || generateQuestions;
   const fillGaps = deps.fillCoverageGaps || fillCoverageGaps;
+  const analyzeResume = deps.analyzeResumeMatch || analyzeResumeMatch;
+  const generateResumeQuestionSet = deps.generateResumeQuestions || generateResumeQuestions;
 
   // 1. Extract structured requirements from the job description.
   const extracted = await runStage('Requirement extraction', () =>
@@ -248,14 +275,52 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
     checkCoverage({ requirements, questions })
   );
 
-  // 8. Deterministic interview schedule built from the final question ids.
+  // 8. Optional resume stage. It runs AFTER the deterministic coverage check on
+  //    purpose: requirement coverage keeps being computed from the JD-generated and
+  //    gap-filled questions only, so appending resume questions can never hide a
+  //    coverage gap. Resume questions are appended (never substituted) and then
+  //    flow into the same schedule/flashcards stages as every other question.
+  let resumeAnalysis;
+  let finalQuestions = questions;
+  if (resumeText) {
+    resumeAnalysis = await runStage('Resume gap analysis', () => analyzeResume({ resumeText, requirements }));
+    const resumeQuestionSet = await runStage('Resume question generation', () =>
+      generateResumeQuestionSet({
+        resumeText,
+        requirements,
+        research,
+        startIndex: questions.length,
+      })
+    );
+    const resumeQuestions = Array.isArray(resumeQuestionSet?.questions) ? resumeQuestionSet.questions : [];
+    resumeAnalysis = {
+      ...resumeAnalysis,
+      projects: Array.isArray(resumeQuestionSet?.projects) ? resumeQuestionSet.projects : [],
+    };
+    if (resumeQuestions.length > 0) {
+      finalQuestions = [...questions, ...resumeQuestions];
+    }
+  }
+
+  // 9. Deterministic interview schedule built from the final question ids.
   const schedule = await runStage('Interview scheduling', () =>
-    createSchedule({ questions, interviewDays })
+    createSchedule({ questions: finalQuestions, interviewDays })
   );
 
-  // 9. Preserve the established production API response exactly. The exported
-  //    buildFinalKit adapter derives the validator shape from these same values.
-  return { requirements, research, questions, coverage, schedule };
+  // 10. Preserve the established production API response exactly; the resume
+  //     fields below are additive and only present for a resume-enabled request.
+  //     The exported buildFinalKit adapter derives the validator shape from these
+  //     same values.
+  const resumeMetadata = resumeText ? toResumeMetadata({ ...resumeInput, text: resumeText }) : null;
+  return {
+    requirements,
+    research,
+    questions: finalQuestions,
+    coverage,
+    schedule,
+    ...(resumeMetadata ? { resume: resumeMetadata } : {}),
+    ...(resumeAnalysis ? { resume_analysis: resumeAnalysis } : {}),
+  };
 };
 
 module.exports = { generateInterviewPrepKit, buildFinalKit, PipelineError };

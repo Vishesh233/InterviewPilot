@@ -1,5 +1,40 @@
 # Interview Prep Backend
 
+## Optional resume input
+
+`POST /api/interview-prep` accepts an **optional** `resume` field. Omitting it keeps the existing JD-only request byte-for-byte identical.
+
+```json
+{
+  "jobRole": "Backend Engineer",
+  "jobDescription": "...",
+  "companyUrl": "https://example.com/",
+  "interviewDays": 5,
+  "resume": { "fileName": "cv.pdf", "mimeType": "application/pdf", "dataBase64": "JVBERi0..." }
+}
+```
+
+- Text resumes can be sent as `{"resume": {"text": "..."}}` instead of a file.
+- Supported inputs: PDF (`.pdf`) and text (`.txt`, `.md`), up to 2 MB decoded. The extension allowlist, media-type allowlist, size limit and real file signature are all validated server-side; unsupported or unreadable files fail with a machine-readable code (`RESUME_UNSUPPORTED_FILE_TYPE`, `RESUME_FILE_TOO_LARGE`, `RESUME_INVALID_FILE`, `RESUME_NO_TEXT`, …) and the pipeline never runs.
+- PDF text is recovered with Node's built-in `zlib` only (`resumeTextExtractor.js`); no third-party parser was added. A PDF whose text cannot be recovered confidently is rejected with a clear error instead of producing garbage.
+- Only this route gets a larger (still bounded) JSON body limit, mounted before the shared parser in `server.js`; every other route keeps the existing 256 KB limit and strict JSON parsing.
+- The extracted text is **untrusted data** and is treated exactly like the job description: it is never logged, never persisted, never returned to a client, and never placed in a URL. Prompts delimit it and instruct the model to ignore any instructions inside it.
+
+With a resume, the pipeline runs two extra stages **after** the deterministic coverage check, so requirement coverage keeps meaning "does the question bank cover the JD requirement":
+
+1. `resumeMatchService` classifies every extracted requirement as `matched` / `partial` / `missing`. A match or a partial **requires evidence quoted from the resume**; ungrounded evidence is discarded and the requirement degrades to `missing`. Requirements the model never reported are synthesized as `missing`.
+2. `resumeQuestionService` generates resume/project questions with the new `resume` category. Every candidate must pass the shared question schema, use exact requirement references, use only source URLs from the supplied research, and be traceable to the resume (a project name, a shared distinctive token, or an explicit "your project"-style reference when the resume documents a project).
+
+The kit gains two optional sections — `resume` (file metadata only) and `resume_analysis` (`matchPercent`, matched/partial/missing lists, detected project names, per-requirement matches with evidence). Resume match and requirement coverage are separate metrics and are never merged.
+
+## Coverage gap questions
+
+`POST /api/kits/:id/gaps` (authenticated, owner-scoped) appends questions for the kit's *currently uncovered* requirements, which are taken from the deterministic coverage check (`coverage.missingRequirements`) — so the UI can show "Generate questions for N gaps" without changing the evaluator schema. It reuses the existing gap-fill LLM stage, preserves deterministic question and flashcard ids, never rewrites existing questions, drops duplicate questions while reporting their ids, and re-validates the complete kit before anything is persisted.
+
+## Deterministic question quality
+
+`questionQualityService` reports duplicate, near-duplicate (token Jaccard), redundant requirement coverage, unrelated requirement coverage and excessive per-category repetition. It is LLM-free and never discards questions by itself; regeneration always goes through the existing LLM services.
+
 ## Batch evaluation CLI
 
 Run the mandatory batch evaluator from this directory:

@@ -14,6 +14,8 @@ const { hasUnsafeKeys, isSafeIdentifier } = require('./inputValidationService');
 const QUESTION_STATUS = { GENERATED: 'generated', EDITED: 'edited' };
 
 // Appendix A-compatible kit sections (mirrors KIT_FIELDS in the CRUD controller).
+// `resume` and `resume_analysis` are optional, additive sections: they are carried
+// through every builder/practice write so a resume-enabled kit never loses them.
 const KIT_SECTIONS = [
   'source',
   'company_brief',
@@ -22,6 +24,8 @@ const KIT_SECTIONS = [
   'flashcards',
   'schedule',
   'coverage',
+  'resume',
+  'resume_analysis',
 ];
 
 // A schedule day may store its question ids under any of these keys (all accepted

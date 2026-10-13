@@ -16,6 +16,7 @@ const GEMINI_TIMEOUT_MS = 30_000;
 // key still fails fast and clearly instead of silently calling a second vendor.
 const DEFAULT_OPENROUTER_MODEL = 'dots-studio/dots-3-note-preview:free';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const OPENROUTER_TIMEOUT_MS = 30_000;
 
 let geminiClient;
 let geminiClientApiKey;
@@ -47,17 +48,79 @@ class LlmError extends Error {
   }
 }
 
+const TIMEOUT_ERROR_NAMES = new Set(['AbortError', 'TimeoutError', 'APIConnectionTimeoutError']);
+const TIMEOUT_ERROR_CODES = new Set([
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+
+// The OpenAI SDK's APIConnectionTimeoutError reports `name === 'Error'`, so the
+// class itself (or its constructor name) has to be checked. The Gemini SDK
+// enforces its timeout with AbortController, which surfaces as an AbortError,
+// sometimes wrapped as the `cause` of a fetch error, so the cause chain is
+// followed a few levels.
+const isTimeoutError = (error, depth = 0) => {
+  if (!error || typeof error !== 'object' || depth > 3) return false;
+  if (typeof OpenAI.APIConnectionTimeoutError === 'function' && error instanceof OpenAI.APIConnectionTimeoutError) {
+    return true;
+  }
+  const name = String(error.name || '');
+  const constructorName = String(error.constructor?.name || '');
+  if (TIMEOUT_ERROR_NAMES.has(name) || TIMEOUT_ERROR_NAMES.has(constructorName)) return true;
+  if (/timeout/i.test(name) || /timeout/i.test(constructorName)) return true;
+  if (TIMEOUT_ERROR_CODES.has(error.code)) return true;
+  return isTimeoutError(error.cause, depth + 1);
+};
+
+// Gemini answers a request it cancelled server-side (typically near its own
+// deadline) with HTTP 499 / status "CANCELLED". That is transient, so it is
+// treated as a timeout; every other 4xx stays permanent.
+const isCancelledError = (error) => {
+  const status = error?.status ?? error?.response?.status;
+  if (Number(status) === 499 || status === 'CANCELLED') return true;
+  return /"status"\s*:\s*"CANCELLED"/.test(String(error?.message || ''));
+};
+
 const safeLlmMessage = (error) => {
   const status = Number(error?.status || error?.response?.status);
   if (status === 429) return new LlmError('LLM_RATE_LIMITED', 'The model provider rate limit was reached.', 429);
   if (status >= 500) return new LlmError('LLM_PROVIDER_UNAVAILABLE', 'The model provider is temporarily unavailable.', 502);
-  if (
-    error?.name === 'AbortError' || error?.name === 'TimeoutError' ||
-    /timeout/i.test(String(error?.name || '')) || error?.code === 'ETIMEDOUT'
-  ) {
+  if (isTimeoutError(error) || isCancelledError(error)) {
     return new LlmError('LLM_TIMEOUT', 'The model request timed out.', 504);
   }
   return new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
+};
+
+// Maps a sanitized LlmError code to the log/diagnostic classification.
+const CLASSIFICATION_BY_CODE = {
+  LLM_TIMEOUT: 'timeout',
+  LLM_PROVIDER_UNAVAILABLE: 'overloaded',
+  LLM_RATE_LIMITED: 'rate_limited',
+};
+
+const classifyLlmError = (error) => {
+  const safe = error instanceof LlmError ? error : safeLlmMessage(error);
+  return CLASSIFICATION_BY_CODE[safe.code] || 'permanent';
+};
+
+// One structured line per failed provider attempt. Only metadata is logged:
+// never keys, prompts, or response bodies.
+const logFailedAttempt = ({ provider, model, stage, attempt, rawError, safeError, startedAt }) => {
+  const status = Number(rawError?.status || rawError?.response?.status);
+  console.warn('LLM attempt failed.', JSON.stringify({
+    provider,
+    model,
+    stage: stage || null,
+    attempt,
+    httpStatus: Number.isFinite(status) && status > 0 ? status : null,
+    errorClass: rawError?.constructor?.name || rawError?.name || null,
+    errorCode: safeError.code,
+    durationMs: Date.now() - startedAt,
+    classification: classifyLlmError(safeError),
+  }));
 };
 
 // The provider is a third-party pool, so a single call can transiently fail
@@ -92,7 +155,7 @@ const requestCompletionWithRetry = async (create) => {
   let attempt = 0;
   for (;;) {
     try {
-      return await create();
+      return await create(attempt + 1);
     } catch (error) {
       if (attempt >= MAX_TRANSIENT_RETRIES || !isTransientUpstreamError(error)) {
         throw error;
@@ -137,7 +200,7 @@ const getOpenRouterClient = () => {
       apiKey,
       baseURL: OPENROUTER_BASE_URL,
       maxRetries: 0,
-      timeout: 30_000,
+      timeout: OPENROUTER_TIMEOUT_MS,
     });
     openRouterClientApiKey = apiKey;
   }
@@ -276,30 +339,34 @@ const sanitizeLlmError = (error) => {
 // A missing candidate is not an OpenRouter concern here: Gemini can return a
 // 200 with no usable text (a safety block, or a candidate that only carried
 // reasoning), which is an empty model response, not a missing completion.
-const requestGemini = async ({ contents, responseMimeType, responseSchema, maxOutputTokens, client: clientOverride }) => {
+const requestGemini = async ({ contents, responseMimeType, responseSchema, maxOutputTokens, stage, client: clientOverride }) => {
   const client = clientOverride || getGeminiClient();
   const config = buildGeminiConfig({ responseMimeType, responseSchema, maxOutputTokens });
+  const model = getGeminiModel();
 
-  return requestCompletionWithRetry(async () => {
+  return requestCompletionWithRetry(async (attempt) => {
+    const startedAt = Date.now();
     try {
       return extractGeminiText(
         await client.models.generateContent({
-          model: getGeminiModel(),
+          model,
           contents,
           config,
         })
       );
     } catch (error) {
-      if (error instanceof LlmError) throw error;
-      throw sanitizeLlmError(error);
+      const safeError = sanitizeLlmError(error);
+      logFailedAttempt({ provider: 'gemini', model, stage, attempt, rawError: error, safeError, startedAt });
+      throw safeError;
     }
   });
 };
 
-const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, maxOutputTokens }) => {
-  const openai = getOpenRouterClient();
+const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, maxOutputTokens, stage, openRouterClient }) => {
+  const openai = openRouterClient || getOpenRouterClient();
+  const model = getOpenRouterModel();
   const request = {
-    model: getOpenRouterModel(),
+    model,
     messages: [
       { role: 'system', content: SYSTEM_INSTRUCTION },
       { role: 'user', content: contents },
@@ -324,7 +391,8 @@ const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, m
   // transient provider outcome (OpenRouter can return an error-shaped body on
   // the success path), so it is retried and then reported as an unavailable
   // provider rather than as an empty model response.
-  const callProvider = () => requestCompletionWithRetry(async () => {
+  const callProvider = () => requestCompletionWithRetry(async (attempt) => {
+    const startedAt = Date.now();
     try {
       const raw = await openai.chat.completions.create(request);
       const choice = raw?.choices?.[0];
@@ -337,8 +405,9 @@ const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, m
       }
       return choice.message?.content;
     } catch (error) {
-      if (error instanceof LlmError) throw error;
-      throw sanitizeLlmError(error);
+      const safeError = sanitizeLlmError(error);
+      logFailedAttempt({ provider: 'openrouter', model, stage, attempt, rawError: error, safeError, startedAt });
+      throw safeError;
     }
   });
 
@@ -377,15 +446,17 @@ const assertUsableText = (text) => {
 // permanent Gemini failure — a missing, invalid, or unauthorized key, or a
 // rejected request — is surfaced immediately so a misconfiguration is never
 // hidden behind a second vendor. When a client is injected (tests), the chain is
-// restricted to Gemini so no test can ever reach the network.
-const providerChain = (clientOverride) => {
+// restricted to injected clients so no test can ever reach the network: Gemini
+// only, or Gemini then OpenRouter when an OpenRouter client is injected too.
+const providerChain = (clientOverride, openRouterClientOverride) => {
+  if (clientOverride && openRouterClientOverride) return ['gemini', 'openrouter'];
   if (clientOverride) return ['gemini'];
   if (process.env.OPENROUTER_API_KEY) return ['gemini', 'openrouter'];
   return ['gemini'];
 };
 
 const generateContent = async (input = {}) => {
-  const providers = providerChain(input.client);
+  const providers = providerChain(input.client, input.openRouterClient);
 
   let lastError;
   for (const provider of providers) {
@@ -401,13 +472,48 @@ const generateContent = async (input = {}) => {
   throw lastError;
 };
 
+// Active LLM configuration for the startup log. Reports only whether each key
+// is set, never the key itself.
+const describeLlmConfig = () => {
+  const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
+  const openRouterModelSet = Boolean(process.env.OPENROUTER_MODEL && process.env.OPENROUTER_MODEL.trim());
+  return {
+    primary: {
+      provider: 'gemini',
+      model: getGeminiModel(),
+      modelSource: process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.trim() ? 'GEMINI_MODEL' : 'built-in default',
+      keySet: Boolean(process.env.GEMINI_API_KEY),
+      timeoutMs: GEMINI_TIMEOUT_MS,
+    },
+    fallback: openRouterConfigured
+      ? {
+        provider: 'openrouter',
+        model: getOpenRouterModel(),
+        modelSource: openRouterModelSet
+          ? 'OPENROUTER_MODEL'
+          : `built-in default (OPENROUTER_MODEL is empty, using ${DEFAULT_OPENROUTER_MODEL})`,
+        keySet: true,
+        timeoutMs: OPENROUTER_TIMEOUT_MS,
+      }
+      : 'disabled',
+    maxTransientRetriesPerProvider: MAX_TRANSIENT_RETRIES,
+  };
+};
+
 module.exports = {
   generateContent,
   LlmError,
   MAX_LLM_RESPONSE_LENGTH,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_OPENROUTER_MODEL,
+  GEMINI_TIMEOUT_MS,
+  OPENROUTER_TIMEOUT_MS,
+  OPENROUTER_BASE_URL,
   getGeminiModel,
   getOpenRouterModel,
+  isTimeoutError,
+  classifyLlmError,
+  describeLlmConfig,
+  buildGeminiConfig,
 };
 

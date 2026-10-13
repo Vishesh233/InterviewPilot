@@ -12,6 +12,9 @@ const {
   MAX_JOB_DESCRIPTION_LENGTH,
   MAX_JOB_ROLE_LENGTH,
 } = require('./inputValidationService');
+// Single source of truth for the supported question categories, so the resume
+// category cannot drift between the validator and the generators.
+const { QUESTION_CATEGORIES } = require('./questionSchema');
 
 const REQUIRED_TOP_LEVEL = [
   'source',
@@ -22,6 +25,12 @@ const REQUIRED_TOP_LEVEL = [
   'schedule',
   'coverage',
 ];
+
+// Optional, additive resume sections. Kits without them stay valid.
+const RESUME_FILE_TYPES = ['pdf', 'text'];
+const RESUME_MATCH_STATUSES = ['matched', 'partial', 'missing'];
+const MAX_RESUME_FILE_NAME_LENGTH = 200;
+const MAX_RESUME_EVIDENCE_LENGTH = 300;
 
 const MIN_INTERVIEW_DAYS = 1;
 const MAX_INTERVIEW_DAYS = 60;
@@ -230,8 +239,7 @@ const validateKitStructure = (kit) => {
         }
         if (
           question.category !== undefined && question.category !== null &&
-          (!isBoundedString(question.category, 100) ||
-            !['technical', 'behavioral', 'company', 'role_specific'].includes(question.category))
+          (!isBoundedString(question.category, 100) || !QUESTION_CATEGORIES.includes(question.category))
         ) {
           push(`${base}.category`, 'question category must be a supported category.', 'INVALID_VALUE');
         }
@@ -346,6 +354,73 @@ const validateKitStructure = (kit) => {
         const value = kit.coverage[field];
         if (value !== undefined && value !== null && !Array.isArray(value)) {
           push(`$.coverage.${field}`, `${field} must be an array when present.`, 'INVALID_TYPE');
+        }
+      }
+    }
+  }
+
+  // ---- resume + resume_analysis (optional, additive) ----
+  if (kit.resume !== undefined && kit.resume !== null) {
+    if (!isPlainObject(kit.resume)) {
+      push('$.resume', 'resume must be an object.', 'INVALID_TYPE');
+    } else {
+      if (kit.resume.provided !== undefined && typeof kit.resume.provided !== 'boolean') {
+        push('$.resume.provided', 'resume.provided must be a boolean.', 'INVALID_TYPE');
+      }
+      if (
+        kit.resume.fileName !== undefined && kit.resume.fileName !== null &&
+        !isBoundedString(kit.resume.fileName, MAX_RESUME_FILE_NAME_LENGTH, { allowEmpty: true })
+      ) {
+        push('$.resume.fileName', 'resume.fileName must be a bounded string when present.', 'INVALID_VALUE');
+      }
+      if (kit.resume.fileType !== undefined && !RESUME_FILE_TYPES.includes(kit.resume.fileType)) {
+        push('$.resume.fileType', 'resume.fileType must be pdf or text.', 'INVALID_VALUE');
+      }
+      if (
+        kit.resume.charCount !== undefined &&
+        (!Number.isInteger(kit.resume.charCount) || kit.resume.charCount < 0)
+      ) {
+        push('$.resume.charCount', 'resume.charCount must be a non-negative integer.', 'INVALID_VALUE');
+      }
+    }
+  }
+
+  if (kit.resume_analysis !== undefined && kit.resume_analysis !== null) {
+    if (!isPlainObject(kit.resume_analysis)) {
+      push('$.resume_analysis', 'resume_analysis must be an object.', 'INVALID_TYPE');
+    } else {
+      const percent = kit.resume_analysis.matchPercent;
+      if (percent !== undefined && (typeof percent !== 'number' || percent < 0 || percent > 100)) {
+        push('$.resume_analysis.matchPercent', 'matchPercent must be 0-100.', 'INVALID_VALUE');
+      }
+      for (const field of ['matchedRequirements', 'partialRequirements', 'missingRequirements', 'projects']) {
+        const value = kit.resume_analysis[field];
+        if (value === undefined || value === null) continue;
+        if (!Array.isArray(value) || value.length > 100 || value.some((item) => !isBoundedString(item, MAX_TEXT_LENGTH, { allowEmpty: true }))) {
+          push(`$.resume_analysis.${field}`, `${field} must be an array of bounded strings.`, 'INVALID_VALUE');
+        }
+      }
+      const matches = kit.resume_analysis.matches;
+      if (matches !== undefined && matches !== null) {
+        if (!Array.isArray(matches) || matches.length > 200) {
+          push('$.resume_analysis.matches', 'matches must be an array.', 'INVALID_TYPE');
+        } else {
+          matches.forEach((match, index) => {
+            const base = `$.resume_analysis.matches[${index}]`;
+            if (!isPlainObject(match)) {
+              push(base, 'match entry must be an object.', 'INVALID_TYPE');
+              return;
+            }
+            if (!isNonEmptyString(match.requirement, MAX_TEXT_LENGTH)) {
+              push(`${base}.requirement`, 'match requirement must be a non-empty string.', 'MISSING_FIELD');
+            }
+            if (!RESUME_MATCH_STATUSES.includes(match.status)) {
+              push(`${base}.status`, 'match status must be matched, partial, or missing.', 'INVALID_VALUE');
+            }
+            if (match.evidence !== undefined && match.evidence !== null && !isBoundedString(match.evidence, MAX_RESUME_EVIDENCE_LENGTH)) {
+              push(`${base}.evidence`, 'match evidence must be a bounded string or null.', 'INVALID_VALUE');
+            }
+          });
         }
       }
     }

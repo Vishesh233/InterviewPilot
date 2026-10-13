@@ -18,6 +18,10 @@ const interviewPrepKitSchema = new mongoose.Schema(
     flashcards: { type: mongoose.Schema.Types.Mixed, required: true },
     schedule: { type: mongoose.Schema.Types.Mixed, required: true },
     coverage: { type: mongoose.Schema.Types.Mixed, required: true },
+    // Optional and additive: present only for kits created with a resume. They hold
+    // metadata + the grounded match analysis, never the raw resume text.
+    resume: { type: mongoose.Schema.Types.Mixed },
+    resume_analysis: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }
 );

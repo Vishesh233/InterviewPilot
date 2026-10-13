@@ -155,7 +155,7 @@ describe('PATCH /api/kits/:id/questions/:questionId', () => {
     assert.equal(res.statusCode, 200);
     assert.deepEqual(calls.findOne[0], { _id: 'kit-1', userId: 'user-A' });
     assert.deepEqual(calls.findOneAndUpdate[0].criteria, { _id: 'kit-1', userId: 'user-A' });
-    assert.equal(calls.findOneAndUpdate[0].options.new, true);
+    assert.equal(calls.findOneAndUpdate[0].options.returnDocument, 'after');
 
     const persisted = storedKitOf(calls);
     assert.equal(persisted.questions[2].id, 'q3');

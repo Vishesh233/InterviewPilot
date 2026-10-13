@@ -13,6 +13,7 @@ export function useKitWorkspace({ token, kitId }) {
   const [editingId, setEditingId] = useState(null);
   const [savingId, setSavingId] = useState(null);
   const [regenerating, setRegenerating] = useState('');
+  const [generatingGaps, setGeneratingGaps] = useState(false);
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -72,6 +73,25 @@ export function useKitWorkspace({ token, kitId }) {
     catch (requestError) { setError(messageFor(requestError, 'We could not regenerate this section.')); }
     finally { setRegenerating(''); }
   };
+  // The backend owns the gap list: coverage.missingRequirements is the only source
+  // of truth, so the button only appears when there is a real gap to fill.
+  const gaps = kit?.coverage?.missingRequirements;
+  const gapCount = Array.isArray(gaps) ? gaps.length : 0;
+  const generateGaps = async () => {
+    if (gapCount === 0) return;
+    if (!window.confirm(`Generate questions for ${gapCount} uncovered requirement${gapCount === 1 ? '' : 's'}? Existing questions are kept.`)) return;
+    setGeneratingGaps(true); setError('');
+    try {
+      const result = await api.generateGapQuestions(token, kitId);
+      setKit(result.kit);
+      const added = Array.isArray(result.gaps?.addedQuestionIds) ? result.gaps.addedQuestionIds.length : 0;
+      const remaining = Array.isArray(result.gaps?.remainingGaps) ? result.gaps.remainingGaps.length : 0;
+      setNotice(added === 0
+        ? 'No new questions were added for the remaining gaps.'
+        : `${added} question${added === 1 ? '' : 's'} added${remaining > 0 ? `, ${remaining} gap${remaining === 1 ? '' : 's'} still uncovered` : ''}.`);
+    } catch (requestError) { setError(messageFor(requestError, 'We could not generate questions for the gaps.')); }
+    finally { setGeneratingGaps(false); }
+  };
 
-  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, notice, editQuestion, pinQuestion, reorder, deleteQuestion, regenerate, reload: load };
+  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion, regenerate, generateGaps, reload: load };
 }

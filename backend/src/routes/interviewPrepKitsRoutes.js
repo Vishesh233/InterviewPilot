@@ -12,6 +12,7 @@ const {
   reorderKitQuestions,
   setKitQuestionPinned,
   regenerateKitSection,
+  generateKitGapQuestions,
 } = require('../controllers/interviewPrepKitBuilderController');
 const {
   getKitPractice,
@@ -33,6 +34,10 @@ router.patch('/api/kits/:id/questions/reorder', requireAuth, reorderKitQuestions
 router.patch('/api/kits/:id/questions/:questionId/pin', requireAuth, setKitQuestionPinned);
 router.patch('/api/kits/:id/questions/:questionId', requireAuth, updateKitQuestion);
 router.post('/api/kits/:id/regenerate', requireAuth, regenerateKitSection);
+
+// Coverage gap questions. The literal /gaps path is declared alongside the other
+// literal kit routes, so it can never be parsed as a question id.
+router.post('/api/kits/:id/gaps', requireAuth, generateKitGapQuestions);
 
 // Practice Mode routes.
 router.get('/api/kits/:id/practice', requireAuth, getKitPractice);

@@ -124,4 +124,4 @@ const extractRequirements = async ({ jobDescription, client } = {}) => {
   };
 };
 
-module.exports = { extractRequirements };
+module.exports = { extractRequirements, buildPrompt, RESPONSE_SCHEMA };

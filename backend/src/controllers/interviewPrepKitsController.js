@@ -13,6 +13,9 @@ const KIT_FIELDS = [
   'flashcards',
   'schedule',
   'coverage',
+  // Optional, additive resume sections (absent on JD-only kits).
+  'resume',
+  'resume_analysis',
 ];
 
 // Normalize outgoing kit response: ensures builder metadata and practice defaults are present.
@@ -148,7 +151,7 @@ const updateKit = async (req, res) => {
     const updated = await InterviewPrepKit.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
       { $set: persisted },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (isNotFoundOrForeign(updated)) {
       return res.status(404).json({ message: 'Kit not found' });

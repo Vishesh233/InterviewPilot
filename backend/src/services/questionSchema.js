@@ -9,7 +9,15 @@ const {
   hasUnsafeKeys,
 } = require('./inputValidationService');
 
-const QUESTION_CATEGORIES = ['technical', 'behavioral', 'company', 'role_specific'];
+// 'resume' is additive and identifies questions grounded in a supplied resume and
+// its projects. It is a member of the same enum, so kits saved before it existed
+// keep validating unchanged and any consumer that only checks membership still
+// works.
+const QUESTION_CATEGORIES = ['technical', 'behavioral', 'company', 'role_specific', 'resume'];
+// Categories the section-regeneration flow may replace. Resume/project questions
+// come from a different LLM stage (candidate experience, not the job description),
+// so they are deliberately not regenerable through the JD question generator.
+const REGENERABLE_QUESTION_CATEGORIES = ['technical', 'behavioral', 'company', 'role_specific'];
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
 const ARRAY_FIELDS = ['expectedAnswerPoints', 'followUps', 'sources', 'requirementRefs'];
 
@@ -57,4 +65,4 @@ const validateQuestion = (question) => {
   return errors.length > 0 ? { valid: false, errors } : { valid: true };
 };
 
-module.exports = { validateQuestion, QUESTION_CATEGORIES, DIFFICULTIES };
+module.exports = { validateQuestion, QUESTION_CATEGORIES, REGENERABLE_QUESTION_CATEGORIES, DIFFICULTIES };

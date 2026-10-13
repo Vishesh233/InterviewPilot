@@ -157,7 +157,7 @@ describe('interview prep kits CRUD and ownership', () => {
     await updateKit({ userId: 'user-A', params: { id: 'kit-1' }, body }, res);
     assert.deepEqual(lookup, { _id: 'kit-1', userId: 'user-A' });
     assert.deepEqual(filter, { _id: 'kit-1', userId: 'user-A' });
-    assert.equal(update.options.new, true);
+    assert.equal(update.options.returnDocument, 'after');
     assert.equal(res.body.role.title, 'Updated title');
     assert.equal(res.body.userId, undefined);
   });

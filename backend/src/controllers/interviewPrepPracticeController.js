@@ -55,7 +55,7 @@ const persistPracticeKit = async (req, kit) => {
   const updated = await InterviewPrepKit.findOneAndUpdate(
     { _id: req.params.id, userId: req.userId },
     { $set: kitBuilderService.pickKitSections(kit) },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!updated) {

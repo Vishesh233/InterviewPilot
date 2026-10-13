@@ -9,6 +9,7 @@
 const InterviewPrepKit = require('../models/InterviewPrepKit');
 const kitBuilderService = require('../services/kitBuilderService');
 const kitRegenerationService = require('../services/kitRegenerationService');
+const kitGapQuestionService = require('../services/kitGapQuestionService');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const { hasUnsafeKeys } = require('../services/inputValidationService');
 
@@ -69,7 +70,7 @@ const persistKit = async (req, kit) => {
   const updated = await InterviewPrepKit.findOneAndUpdate(
     { _id: req.params.id, userId: req.userId },
     { $set: kitBuilderService.pickKitSections(kit) },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) {
     throw new KitBuilderError('KIT_NOT_FOUND', 'Kit not found.', { status: 404 });
@@ -155,9 +156,35 @@ const regenerateKitSection = async (req, res) => {
   }
 };
 
+const generateKitGapQuestions = async (req, res) => {
+  try {
+    const kit = kitBuilderService.withBuilderMetadata(await loadOwnedKit(req));
+    const { kit: filled, summary } = await kitGapQuestionService.generateGapQuestions({ kit });
+
+    // The service already validated the result; re-check before the write so an
+    // invalid gap fill can never be persisted.
+    const validation = validateKitStructure(filled);
+    if (!validation.valid) {
+      return res.status(500).json({
+        error: {
+          code: 'KIT_GAP_VALIDATION_FAILED',
+          message: 'The gap-filled kit failed structure validation and was not saved.',
+          details: validation.errors.map(({ path, code }) => ({ path, code })),
+        },
+      });
+    }
+
+    const updated = await persistKit(req, filled);
+    return res.json({ kit: kitBuilderService.withBuilderMetadata(updated), gaps: summary });
+  } catch (error) {
+    return respondWithBuilderError(res, error);
+  }
+};
+
 module.exports = {
   updateKitQuestion,
   reorderKitQuestions,
   setKitQuestionPinned,
   regenerateKitSection,
+  generateKitGapQuestions,
 };

@@ -48,6 +48,10 @@ export function kitFromPipeline(input, result) {
     flashcards: questions.map((question, index) => ({ id: `f${index + 1}`, front: question.question, back: [...(question.expectedAnswerPoints || []), ...(question.followUps || [])].join('\n') || question.why, questionIds: [question.id] })),
     schedule: result.schedule,
     coverage: result.coverage,
+    // Additive: present only when the generation request carried a resume. The
+    // JD-only request produces exactly the same kit shape as before.
+    ...(result.resume && result.resume.provided === true ? { resume: result.resume } : {}),
+    ...(result.resume_analysis ? { resume_analysis: result.resume_analysis } : {}),
   };
 }
 

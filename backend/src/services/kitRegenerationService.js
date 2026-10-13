@@ -7,7 +7,7 @@
 // already validated, so an invalid regeneration can never reach MongoDB.
 
 const { validateKitStructure } = require('./kitStructureValidator');
-const { validateQuestion, QUESTION_CATEGORIES } = require('./questionSchema');
+const { validateQuestion, REGENERABLE_QUESTION_CATEGORIES } = require('./questionSchema');
 const { checkCoverage } = require('./coverageService');
 const { generateQuestions } = require('./questionGenerationService');
 const { fillCoverageGaps } = require('./gapFillService');
@@ -74,11 +74,11 @@ const regenerateKitSection = async ({ kit, category, deps = {} } = {}) => {
     });
   }
 
-  if (!QUESTION_CATEGORIES.includes(section)) {
+  if (!REGENERABLE_QUESTION_CATEGORIES.includes(section)) {
     throw new KitBuilderError(
       'BUILDER_INVALID_SECTION',
       'category must be a supported question category.',
-      { status: 400, details: { allowedCategories: QUESTION_CATEGORIES } }
+      { status: 400, details: { allowedCategories: REGENERABLE_QUESTION_CATEGORIES } }
     );
   }
 

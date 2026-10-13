@@ -58,7 +58,9 @@ Local fixtures:
   the production research service still accepts only public HTTP(S) URLs.
 
 Credentials are loaded from backend/.env and the process environment. The
-current pipeline requires OPENROUTER_API_KEY. No database is used.
+pipeline requires GEMINI_API_KEY (primary provider; model from GEMINI_MODEL or
+the built-in default). OPENROUTER_API_KEY is optional and only enables the
+fallback used when Gemini fails transiently. No database is used.
 
 Exit codes:
   0  Batch completed and every case succeeded.

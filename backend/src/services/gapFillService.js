@@ -6,6 +6,7 @@ const { Type } = require('@google/genai');
 const { generateContent, LlmError } = require('./geminiClient');
 const { validateQuestion } = require('./questionSchema');
 const { checkCoverage } = require('./coverageService');
+const { normalizeQuestionText } = require('./questionQualityService');
 
 const QUESTION_CATEGORIES = ['technical', 'behavioral', 'company', 'role_specific'];
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
@@ -130,7 +131,7 @@ const fillCoverageGaps = async ({ requirements, research, questions, coverage, c
     ),
   ];
   if (missingRequirements.length === 0) {
-    return { questions, coverage };
+    return { questions, coverage, droppedDuplicateQuestionIds: [] };
   }
 
   // 3. Gaps exist — validate remaining inputs and the API key.
@@ -224,11 +225,30 @@ const fillCoverageGaps = async ({ requirements, research, questions, coverage, c
     newQuestions.push(question);
   }
 
-  // 7. Never remove or modify existing questions — append only, then re-check coverage.
-  const combinedQuestions = [...questions, ...newQuestions];
+  // 7. Never remove or modify existing questions — append only. A deterministic
+  //    quality guard drops a newly generated question whose text is identical to a
+  //    question already in the bank (or to an earlier new one), so a gap can never
+  //    be "filled" with a duplicate. Existing questions stay untouched, and the
+  //    dropped ids are reported instead of being discarded silently.
+  const seenTexts = new Set(
+    questions.map((question) => normalizeQuestionText(question?.question)).filter(Boolean)
+  );
+  const uniqueNewQuestions = [];
+  const droppedDuplicateQuestionIds = [];
+  for (const question of newQuestions) {
+    const text = normalizeQuestionText(question?.question);
+    if (text && seenTexts.has(text)) {
+      droppedDuplicateQuestionIds.push(question.id);
+      continue;
+    }
+    if (text) seenTexts.add(text);
+    uniqueNewQuestions.push(question);
+  }
+
+  const combinedQuestions = [...questions, ...uniqueNewQuestions];
   const updatedCoverage = checkCoverage({ requirements, questions: combinedQuestions });
 
-  return { questions: combinedQuestions, coverage: updatedCoverage };
+  return { questions: combinedQuestions, coverage: updatedCoverage, droppedDuplicateQuestionIds };
 };
 
 module.exports = { fillCoverageGaps };

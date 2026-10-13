@@ -4,11 +4,18 @@ const connectDB = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const interviewPrepRoutes = require('./routes/interviewPrepRoutes');
 const interviewPrepKitsRoutes = require('./routes/interviewPrepKitsRoutes');
+const { RESUME_REQUEST_JSON_LIMIT_BYTES } = require('./services/resumeTextExtractor');
+const { describeLlmConfig } = require('./services/geminiClient');
 
 const app = express();
 app.disable('x-powered-by');
 const PORT = process.env.PORT || 5000;
 
+// The interview-prep route can carry an optional resume file (base64), which needs
+// a larger — still bounded — JSON limit. It parses its own body here, before the
+// shared parser; body-parser then skips the already-consumed body, so every other
+// route keeps the existing 256kb limit and all JSON parsing stays strict.
+app.use('/api/interview-prep', express.json({ limit: RESUME_REQUEST_JSON_LIMIT_BYTES, strict: true }));
 app.use(express.json({ limit: '256kb', strict: true }));
 
 app.get('/api/health', (req, res) => {
@@ -42,6 +49,7 @@ app.use((error, req, res, next) => {
 if (require.main === module) {
   // Connect to the database FIRST, then start listening
   const startServer = async () => {
+    console.log('LLM configuration:', JSON.stringify(describeLlmConfig()));
     await connectDB();
 
     app.listen(PORT, () => {
