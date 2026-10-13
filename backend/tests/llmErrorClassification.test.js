@@ -172,6 +172,64 @@ describe('LLM error classification', () => {
     assert.deepEqual(order, ['gemini']);
   });
 
+  describe('GEMINI_THINKING', () => {
+    let previous;
+    beforeEach(() => { previous = process.env.GEMINI_THINKING; });
+    afterEach(() => {
+      if (previous === undefined) delete process.env.GEMINI_THINKING;
+      else process.env.GEMINI_THINKING = previous;
+    });
+
+    it('sends no thinkingConfig when GEMINI_THINKING is empty or unset', async () => {
+      for (const value of [undefined, '', '   ']) {
+        if (value === undefined) delete process.env.GEMINI_THINKING;
+        else process.env.GEMINI_THINKING = value;
+        const client = scriptedClient(['{"ok":true}']);
+        await generateContent({ contents: 'x', responseMimeType: 'application/json', client });
+        assert.equal(client.calls.length, 1);
+        assert.equal(Object.hasOwn(client.calls[0].config, 'thinkingConfig'), false);
+      }
+    });
+
+    it('sends thinkingConfig.thinkingLevel for a level name and thinkingBudget for an integer', async () => {
+      for (const [value, expected] of [
+        ['minimal', { thinkingLevel: 'MINIMAL' }],
+        ['HIGH', { thinkingLevel: 'HIGH' }],
+        ['0', { thinkingBudget: 0 }],
+        ['-1', { thinkingBudget: -1 }],
+        ['1024', { thinkingBudget: 1024 }],
+      ]) {
+        process.env.GEMINI_THINKING = value;
+        const client = scriptedClient(['{"ok":true}']);
+        await generateContent({ contents: 'x', responseMimeType: 'application/json', client });
+        assert.deepEqual(client.calls[0].config.thinkingConfig, expected, value);
+      }
+    });
+
+    it('rejects an invalid GEMINI_THINKING before calling the model', async () => {
+      process.env.GEMINI_THINKING = 'turbo';
+      const client = scriptedClient(['{"ok":true}']);
+      await assert.rejects(
+        generateContent({ contents: 'x', client }),
+        (error) => error instanceof LlmError && error.code === 'LLM_INVALID_CONFIG'
+      );
+      assert.equal(client.calls.length, 0);
+    });
+
+    it('surfaces a 400 while thinking is set as a permanent, explicit error', async () => {
+      process.env.GEMINI_THINKING = 'MINIMAL';
+      const client = scriptedClient([new ApiError({ message: 'thinking level is not supported', status: 400 })]);
+      await assert.rejects(
+        generateContent({ contents: 'x', client }),
+        (error) => error instanceof LlmError &&
+          error.code === 'LLM_THINKING_CONFIG_REJECTED' &&
+          /GEMINI_THINKING=MINIMAL/.test(error.message)
+      );
+      assert.equal(client.calls.length, 1, 'a rejected thinking setting must not be retried');
+      assert.equal(classifyLlmError(new LlmError('LLM_THINKING_CONFIG_REJECTED', 'x', 502)), 'permanent');
+    });
+  });
+
   it('logs one structured line per failed attempt without keys or prompts', async () => {
     const previousKey = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = 'test-secret-key-value';

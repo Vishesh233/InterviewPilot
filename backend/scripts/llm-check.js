@@ -27,6 +27,7 @@ const {
   classifyLlmError,
   describeLlmConfig,
   buildGeminiConfig,
+  parseGeminiThinking,
 } = require('../src/services/geminiClient');
 const {
   extractRequirements,
@@ -112,7 +113,13 @@ const parseBenchArgs = (argv) => {
   if (models.length * runs > BENCH_MAX_CALLS) {
     throw new Error(`${models.length} models x ${runs} runs = ${models.length * runs} calls, above the cap of ${BENCH_MAX_CALLS}`);
   }
-  return { models, runs };
+  let thinking;
+  if (argv.includes('--thinking')) {
+    thinking = valueOf('--thinking');
+    if (thinking === undefined || thinking.startsWith('--')) throw new Error('--thinking requires a value');
+    if (!parseGeminiThinking(thinking)) throw new Error('--thinking must not be empty');
+  }
+  return { models, runs, thinking };
 };
 
 // Runs the captured model text through the real extraction service with a
@@ -144,7 +151,7 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
 };
 
-const runBench = async ({ models, runs }) => {
+const runBench = async ({ models, runs, thinking }) => {
   if (!process.env.GEMINI_API_KEY) {
     console.log('[bench] GEMINI_API_KEY is not set');
     return 1;
@@ -157,25 +164,36 @@ const runBench = async ({ models, runs }) => {
   // prompt builder, schema, JSON output setting and system instruction. The
   // pipeline sets no temperature, so none is set here either.
   const contents = buildRequirementPrompt(BENCH_JOB_DESCRIPTION);
-  const config = buildGeminiConfig({ responseMimeType: 'application/json', responseSchema: REQUIREMENT_RESPONSE_SCHEMA });
+  // --thinking overrides GEMINI_THINKING for this run only; same parser as the
+  // pipeline, so an invalid value fails here instead of being dropped.
+  const thinkingSource = thinking !== undefined ? '--thinking' : 'GEMINI_THINKING';
+  const thinkingRaw = thinking !== undefined ? thinking : process.env.GEMINI_THINKING;
+  const thinkingConfig = parseGeminiThinking(thinkingRaw);
+  const thinkingLabel = thinkingConfig ? String(thinkingRaw).trim() : 'default';
+  const config = buildGeminiConfig({ responseMimeType: 'application/json', responseSchema: REQUIREMENT_RESPONSE_SCHEMA, thinkingConfig });
   const words = BENCH_JOB_DESCRIPTION.split(/\s+/).filter(Boolean).length;
-  console.log(`[bench] stage=requirement extraction jdWords=${words} promptChars=${contents.length} timeoutMs=${BENCH_TIMEOUT_MS} plannedCalls=${models.length * runs} (cap ${BENCH_MAX_CALLS})`);
+  console.log(`[bench] stage=requirement extraction jdWords=${words} promptChars=${contents.length} thinking=${thinkingLabel} (source=${thinkingConfig ? thinkingSource : 'none'}, thinkingConfig=${JSON.stringify(thinkingConfig)}) timeoutMs=${BENCH_TIMEOUT_MS} plannedCalls=${models.length * runs} (cap ${BENCH_MAX_CALLS})`);
 
   const results = [];
   for (const model of models) {
     for (let run = 1; run <= runs; run += 1) {
       const startedAt = Date.now();
-      const row = { model, run };
+      const row = { model, run, thinking: thinkingLabel };
       try {
         const response = await gemini.models.generateContent({ model, contents, config });
         row.latencyMs = Date.now() - startedAt;
         const text = typeof response?.text === 'string' ? response.text : '';
         row.ok = text.trim().length > 0;
         row.outputChars = text.length;
+        const usage = response?.usageMetadata || {};
+        row.promptTokens = usage.promptTokenCount ?? null;
+        row.outputTokens = usage.candidatesTokenCount ?? null;
+        row.thinkingTokens = usage.thoughtsTokenCount ?? null;
         Object.assign(row, await validateExtraction(text));
         console.log(
           `[bench] model=${model} run=${run} status=${row.ok ? 'ok' : 'empty'} latencyMs=${row.latencyMs} ` +
-          `outputChars=${row.outputChars} parsesJson=${row.parses} passesValidator=${row.valid}${row.reason ? ` reason=${row.reason}` : ''}`
+          `outputChars=${row.outputChars} parsesJson=${row.parses} passesValidator=${row.valid}${row.reason ? ` reason=${row.reason}` : ''} ` +
+          `tokens(prompt/output/thinking)=${row.promptTokens}/${row.outputTokens}/${row.thinkingTokens}`
         );
       } catch (error) {
         row.latencyMs = Date.now() - startedAt;
@@ -192,12 +210,13 @@ const runBench = async ({ models, runs }) => {
   }
 
   console.log('\nSummary (median latency over successful calls):');
-  const header = ['model', 'ok/total', 'median latency ms', 'validator pass'];
+  const header = ['model', 'thinking', 'ok/total', 'median latency ms', 'validator pass', 'median thinking tokens'];
   const rows = models.map((model) => {
     const mine = results.filter((row) => row.model === model);
     const okRows = mine.filter((row) => row.ok);
     const med = median(okRows.map((row) => row.latencyMs));
-    return [model, `${okRows.length}/${mine.length}`, med === null ? '-' : String(med), `${mine.filter((row) => row.valid).length}/${mine.length}`];
+    const thinkingTokens = median(okRows.map((row) => row.thinkingTokens).filter((value) => Number.isFinite(value)));
+    return [model, thinkingLabel, `${okRows.length}/${mine.length}`, med === null ? '-' : String(med), `${mine.filter((row) => row.valid).length}/${mine.length}`, thinkingTokens === null ? '-' : String(thinkingTokens)];
   });
   const widths = header.map((title, index) => Math.max(title.length, ...rows.map((row) => row[index].length)));
   const line = (cells) => `| ${cells.map((cell, index) => cell.padEnd(widths[index])).join(' | ')} |`;
