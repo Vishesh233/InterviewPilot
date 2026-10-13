@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageFrame, BackLink } from '@/components/layout/AppHeader';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { api, ApiError } from '@/lib/api';
-import { kitFromPipeline } from '@/lib/kitAdapter';
-import { GenerationProgress, generationStages } from '@/components/loading/GenerationProgress';
+import { isActiveJob } from '@/lib/jobs';
+import { useJobPolling } from '@/components/jobs/useJobPolling';
+import { JobFailure } from '@/components/jobs/JobStatus';
+import { GenerationProgress } from '@/components/loading/GenerationProgress';
 import { Alert, Badge, Button, Card, LoadingState } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
 
@@ -40,20 +42,80 @@ const readFileAsBase64 = (file) =>
 
 const formatFileSize = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
+// The text fields of a submitted form are kept in sessionStorage per job, so a
+// reload of /kits/new?job=<id> can still show (and resubmit) the same input.
+// The resume file is deliberately not stored there.
+const savedFormKey = (jobId) => `interviewpilot:job-form:${jobId}`;
+
+const saveFormForJob = (jobId, form, hadResume) => {
+  try {
+    window.sessionStorage.setItem(savedFormKey(jobId), JSON.stringify({ form, hadResume }));
+  } catch (storageError) {
+    console.warn('The form could not be kept for a reload.', storageError?.name);
+  }
+};
+
+const readFormForJob = (jobId) => {
+  try {
+    const raw = window.sessionStorage.getItem(savedFormKey(jobId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (storageError) {
+    console.warn('The saved form could not be read.', storageError?.name);
+    return null;
+  }
+};
+
+const clearFormForJob = (jobId) => {
+  try {
+    window.sessionStorage.removeItem(savedFormKey(jobId));
+  } catch (storageError) {
+    console.warn('The saved form could not be cleared.', storageError?.name);
+  }
+};
+
 export default function NewKitForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const jobId = searchParams.get('job') || '';
   const { token, loading: authLoading } = useAuth();
   const [form, setForm] = useState({ jobRole: '', jobDescription: '', companyUrl: '', interviewDays: 7 });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [stage, setStage] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+  const [resumeLost, setResumeLost] = useState(false);
   const [resume, setResume] = useState(null);
   const [resumeError, setResumeError] = useState('');
   const [readingResume, setReadingResume] = useState(false);
 
   useEffect(() => { if (!authLoading && !token) router.replace('/login'); }, [authLoading, router, token]);
-  useEffect(() => { if (!generating) return undefined; const timer = setInterval(() => setStage((current) => Math.min(generationStages.length, current + 1)), 4200); return () => clearInterval(timer); }, [generating]);
+
+  // After a reload, restore the input that started this job.
+  useEffect(() => {
+    if (!jobId) return;
+    const saved = readFormForJob(jobId);
+    if (saved?.form) {
+      setForm(saved.form);
+      setResumeLost(Boolean(saved.hadResume) && !resume);
+    }
+    // Only when the watched job changes; `resume` is read once on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
+  const onFinished = useCallback((finished) => {
+    if (finished.status === 'succeeded' && finished.kitId) {
+      clearFormForJob(jobId);
+      router.push(`/kits/${encodeURIComponent(finished.kitId)}`);
+    }
+  }, [jobId, router]);
+  const { job, pollError, notFound } = useJobPolling({ token, jobId, epoch, onFinished });
+
+  // Put the job in the URL so a reload keeps polling the same generation.
+  const watchJob = (id) => {
+    router.replace(`/kits/new?job=${encodeURIComponent(id)}`);
+    setEpoch((current) => current + 1);
+  };
 
   const update = (event) => {
     const { name, value } = event.target;
@@ -96,28 +158,63 @@ export default function NewKitForm() {
     return Object.keys(next).length === 0;
   };
 
-  const submit = async (event) => {
-    event.preventDefault();
+  // Submits the current input as a new background job. Used by the form and by
+  // "Start over" after a failure (the input is still in the form).
+  const startGeneration = async () => {
     setError('');
     if (!validate()) return;
-    setGenerating(true);
-    setStage(1);
+    setSubmitting(true);
     try {
       const body = { jobRole: form.jobRole.trim(), jobDescription: form.jobDescription, companyUrl: form.companyUrl.trim(), interviewDays: form.interviewDays };
       if (resume) body.resume = { fileName: resume.fileName, mimeType: resume.mimeType, dataBase64: resume.dataBase64 };
-      const generated = await api.generateKit(token, body);
-      const saved = await api.createKit(token, kitFromPipeline(form, generated));
-      router.push(`/kits/${encodeURIComponent(saved._id || saved.id)}`);
+      const { jobId: nextJobId } = await api.generateKit(token, body);
+      saveFormForJob(nextJobId, form, Boolean(resume));
+      setResumeLost(false);
+      watchJob(nextJobId);
     } catch (requestError) {
-      setGenerating(false);
-      setError(requestError instanceof ApiError ? requestError.message : 'We could not generate this kit. Your input is still here—please try again.');
+      // A generation is already running for this account: follow it instead.
+      if (requestError instanceof ApiError && requestError.code === 'JOB_ALREADY_RUNNING' && requestError.jobId) {
+        watchJob(requestError.jobId);
+        return;
+      }
+      setError(requestError instanceof ApiError ? requestError.message : 'We could not start this kit. Your input is still here—please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    startGeneration();
+  };
+
+  const resumeFailedJob = async () => {
+    setError('');
+    setResuming(true);
+    try {
+      await api.resumeJob(token, jobId);
+      setEpoch((current) => current + 1);
+    } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.code === 'JOB_ALREADY_RUNNING' && requestError.jobId) {
+        watchJob(requestError.jobId);
+        return;
+      }
+      setError(requestError instanceof ApiError ? requestError.message : 'We could not resume this generation. Please start over.');
+    } finally {
+      setResuming(false);
     }
   };
 
   if (authLoading || !token) return <PageFrame><LoadingState label="Checking your session" /></PageFrame>;
-  if (generating) return <PageFrame><div className="mx-auto max-w-3xl"><BackLink href="/dashboard">Back to dashboard</BackLink><div className="mt-8"><GenerationProgress stage={stage} /></div></div></PageFrame>;
+  const watching = Boolean(jobId) && !notFound && (!job || isActiveJob(job) || job.status === 'succeeded');
+  if (submitting || watching) return <PageFrame><div className="mx-auto max-w-3xl"><BackLink href="/dashboard">Back to dashboard</BackLink><div className="mt-8"><GenerationProgress job={job} pollError={pollError} /></div></div></PageFrame>;
 
-  return <PageFrame><div className="mx-auto max-w-5xl"><BackLink href="/dashboard">Back to dashboard</BackLink><div className="mt-8 grid gap-8 lg:grid-cols-[1fr_300px] lg:items-start"><div><p className="eyebrow">New preparation kit</p><h1 className="mt-3 max-w-2xl font-display text-4xl tracking-tight text-ink sm:text-5xl">Give the next interview a head start.</h1><p className="mt-4 max-w-xl text-sm leading-6 text-muted">Share the role and the company. We’ll turn the brief into a practical set of questions, coverage, and a day-by-day plan.</p><FormFields errors={errors} form={form} onSubmit={submit} onUpdate={update} onCancel={() => router.push('/dashboard')} error={error} onRemoveResume={removeResume} onResumeSelected={onResumeSelected} readingResume={readingResume} resume={resume} resumeError={resumeError} /></div><CreateKitAside /></div></div></PageFrame>;
+  const failedJob = job?.status === 'failed' ? job : null;
+  return <PageFrame><div className="mx-auto max-w-5xl"><BackLink href="/dashboard">Back to dashboard</BackLink><div className="mt-8 grid gap-8 lg:grid-cols-[1fr_300px] lg:items-start"><div><p className="eyebrow">New preparation kit</p><h1 className="mt-3 max-w-2xl font-display text-4xl tracking-tight text-ink sm:text-5xl">Give the next interview a head start.</h1><p className="mt-4 max-w-xl text-sm leading-6 text-muted">Share the role and the company. We’ll turn the brief into a practical set of questions, coverage, and a day-by-day plan.</p>
+    {failedJob && <JobFailure className="mt-7" job={failedJob} onResume={resumeFailedJob} onStartOver={startGeneration} resuming={resuming} />}
+    {failedJob && resumeLost && <Alert className="mt-3" tone="info" title="Resume not kept">The resume you attached is not kept after a reload. Attach it again before you start over.</Alert>}
+    {notFound && <Alert className="mt-7" title="Generation not found">{pollError} Your input is below if you want to start again.</Alert>}
+    <FormFields errors={errors} form={form} onSubmit={submit} onUpdate={update} onCancel={() => router.push('/dashboard')} error={error} onRemoveResume={removeResume} onResumeSelected={onResumeSelected} readingResume={readingResume} resume={resume} resumeError={resumeError} /></div><CreateKitAside /></div></div></PageFrame>;
 }
 
 function FormFields({ errors, form, onSubmit, onUpdate, onCancel, error, resume, resumeError, readingResume, onResumeSelected, onRemoveResume }) {

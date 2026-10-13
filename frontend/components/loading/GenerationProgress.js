@@ -1,32 +1,34 @@
 'use client';
 
 import { Icon } from '@/components/ui/Icon';
+import { RetryNotice, stepText } from '@/components/jobs/JobStatus';
+import { stageLabel } from '@/lib/jobs';
 
-export const generationStages = [
-  'Reading job requirements',
-  'Researching the company',
-  'Generating interview questions',
-  'Checking requirement coverage',
-  'Building the preparation schedule',
-];
-
-export function GenerationProgress({ stage }) {
+// Live progress of a background kit job: the real stage the server reports,
+// "step X of Y", and the automatic-retry state.
+export function GenerationProgress({ job, pollError }) {
+  const stageCount = job?.stageCount || 0;
+  const stageIndex = Math.min(stageCount, Math.max(0, job?.stageIndex || 0));
+  const percent = stageCount ? Math.round((Math.max(0, stageIndex - 1) / stageCount) * 100) : 0;
+  const queued = !job || job.status === 'queued';
   return <div className="card overflow-hidden">
     <div className="border-b border-line bg-[#fbfcfa] px-6 py-5 sm:px-8">
-      <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Icon name="spark" size={18} /></span><div><p className="eyebrow">Building your kit</p><h2 className="mt-1 text-lg font-semibold text-ink">A thoughtful brief takes a moment.</h2></div></div>
-      <p className="mt-4 max-w-xl text-sm leading-6 text-muted">The backend is working through the same synchronous pipeline used by the web app. These are indicative milestones while the request is in flight, not live streamed events.</p>
+      <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Icon name="spark" size={18} /></span><div><p className="eyebrow">Building your kit</p><h2 className="mt-1 text-lg font-semibold text-ink">A thoughtful brief takes a few minutes.</h2></div></div>
+      <p className="mt-4 max-w-xl text-sm leading-6 text-muted">You can leave this page open or come back to it later: the generation keeps running on the server and this page picks it up again.</p>
     </div>
-    <ol className="divide-y divide-line px-6 sm:px-8">
-      {generationStages.map((label, index) => {
-        const number = index + 1;
-        const active = number === stage;
-        const complete = number < stage;
-        return <li className="flex items-center gap-4 py-4" key={label}>
-          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${complete ? 'bg-brand-600 text-white' : active ? 'border-2 border-brand-500 bg-brand-50 text-brand-700' : 'bg-[#f1f3f0] text-muted'}`}>{complete ? <Icon name="check" size={14} /> : number}</span>
-          <span className={`text-sm ${active ? 'font-semibold text-ink' : complete ? 'text-brand-700' : 'text-muted'}`}>{label}</span>
-          {active && <span className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600" />}
-        </li>;
-      })}
-    </ol>
+    <div className="space-y-5 px-6 py-6 sm:px-8">
+      <div className="flex items-center gap-4">
+        <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-brand-100 border-t-brand-600" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-ink">{queued ? 'Waiting for a free generation slot…' : stageLabel(job.stage)}</p>
+          <p className="mt-1 text-xs text-muted">{queued ? 'Your request is queued.' : stepText(job)}</p>
+        </div>
+      </div>
+      <div aria-label="Generation progress" aria-valuemax={100} aria-valuemin={0} aria-valuenow={percent} className="h-2 overflow-hidden rounded-full bg-[#f1f3f0]" role="progressbar">
+        <div className="h-full rounded-full bg-brand-600 transition-all duration-500" style={{ width: `${percent}%` }} />
+      </div>
+      <RetryNotice job={job} />
+      {pollError && <p className="text-xs text-muted">{pollError}</p>}
+    </div>
   </div>;
 }

@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { isActiveJob } from '@/lib/jobs';
+import { useJobPolling } from '@/components/jobs/useJobPolling';
 
 const messageFor = (error, fallback) => error instanceof ApiError ? error.message : fallback;
 
@@ -12,9 +14,13 @@ export function useKitWorkspace({ token, kitId }) {
   const [section, setSection] = useState('brief');
   const [editingId, setEditingId] = useState(null);
   const [savingId, setSavingId] = useState(null);
-  const [regenerating, setRegenerating] = useState('');
-  const [generatingGaps, setGeneratingGaps] = useState(false);
   const [notice, setNotice] = useState('');
+  // The background job for a kit change: { kind: 'gaps' | 'regenerate', category, jobId }.
+  const [kitJob, setKitJob] = useState(null);
+  const [jobEpoch, setJobEpoch] = useState(0);
+  const [resumingJob, setResumingJob] = useState(false);
+  const kitJobRef = useRef(kitJob);
+  kitJobRef.current = kitJob;
 
   const load = useCallback(async () => {
     if (!token || !kitId) { setLoading(false); return; }
@@ -23,6 +29,61 @@ export function useKitWorkspace({ token, kitId }) {
   }, [kitId, token]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reload the kit in place (no full-page loading state) after a job saved changes.
+  const refresh = useCallback(async () => {
+    try { setKit(await api.getKit(token, kitId)); } catch (requestError) { setError(messageFor(requestError, 'We could not reload this kit.')); }
+  }, [kitId, token]);
+
+  const onJobFinished = useCallback(async (finished) => {
+    if (finished.status !== 'succeeded') return; // a failure stays visible with Resume / Try again
+    const current = kitJobRef.current;
+    setKitJob(null);
+    await refresh();
+    if (current?.kind === 'gaps') {
+      const added = Array.isArray(finished.summary?.addedQuestionIds) ? finished.summary.addedQuestionIds.length : 0;
+      const remaining = Array.isArray(finished.summary?.remainingGaps) ? finished.summary.remainingGaps.length : 0;
+      setNotice(added === 0
+        ? 'No new questions were added for the remaining gaps.'
+        : `${added} question${added === 1 ? '' : 's'} added${remaining > 0 ? `, ${remaining} gap${remaining === 1 ? '' : 's'} still uncovered` : ''}.`);
+    } else if (current?.kind === 'regenerate') {
+      setNotice(`${current.category} questions regenerated. Edited and pinned questions were preserved.`);
+    }
+  }, [refresh]);
+  const { job: kitJobState, pollError: kitJobPollError } = useJobPolling({ token, jobId: kitJob?.jobId, epoch: jobEpoch, onFinished: onJobFinished });
+  const kitJobActive = Boolean(kitJob) && (!kitJobState || isActiveJob(kitJobState));
+
+  const watchKitJob = (next) => { setKitJob(next); setJobEpoch((current) => current + 1); };
+
+  // Starts a kit-change job. On 409 JOB_ALREADY_RUNNING the existing job is
+  // followed instead of showing an error.
+  const startKitJob = async (kind, category) => {
+    setError('');
+    try {
+      const { jobId } = kind === 'gaps'
+        ? await api.generateGapQuestions(token, kitId)
+        : await api.regenerateSection(token, kitId, category);
+      watchKitJob({ kind, category, jobId });
+    } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.code === 'JOB_ALREADY_RUNNING' && requestError.jobId) {
+        watchKitJob({ kind, category, jobId: requestError.jobId });
+        return;
+      }
+      setError(messageFor(requestError, kind === 'gaps' ? 'We could not generate questions for the gaps.' : 'We could not regenerate this section.'));
+    }
+  };
+
+  const resumeKitJob = async () => {
+    if (!kitJob) return;
+    setError(''); setResumingJob(true);
+    try { await api.resumeJob(token, kitJob.jobId); setJobEpoch((current) => current + 1); }
+    catch (requestError) {
+      if (requestError instanceof ApiError && requestError.code === 'JOB_ALREADY_RUNNING' && requestError.jobId) { watchKitJob({ ...kitJob, jobId: requestError.jobId }); return; }
+      setError(messageFor(requestError, 'We could not resume this generation.'));
+    } finally { setResumingJob(false); }
+  };
+  const retryKitJob = () => { if (kitJob) startKitJob(kitJob.kind, kitJob.category); };
+  const dismissKitJob = () => setKitJob(null);
   useEffect(() => { if (!notice) return undefined; const timer = setTimeout(() => setNotice(''), 4000); return () => clearTimeout(timer); }, [notice]);
 
   const questions = useMemo(() => kit?.questions || [], [kit]);
@@ -68,11 +129,10 @@ export function useKitWorkspace({ token, kitId }) {
   };
   const regenerate = async (category) => {
     if (!window.confirm(`Regenerate ${category} questions? Edited and pinned questions will be preserved.`)) return;
-    setRegenerating(category); setError('');
-    try { const result = await api.regenerateSection(token, kitId, category); setKit(result.kit); setNotice(`${category} questions regenerated. Edited and pinned questions were preserved.`); }
-    catch (requestError) { setError(messageFor(requestError, 'We could not regenerate this section.')); }
-    finally { setRegenerating(''); }
+    await startKitJob('regenerate', category);
   };
+  const regenerating = kitJobActive && kitJob.kind === 'regenerate' ? kitJob.category : '';
+  const generatingGaps = kitJobActive && kitJob.kind === 'gaps';
   // The backend owns the gap list: coverage.missingRequirements is the only source
   // of truth, so the button only appears when there is a real gap to fill.
   const gaps = kit?.coverage?.missingRequirements;
@@ -80,18 +140,8 @@ export function useKitWorkspace({ token, kitId }) {
   const generateGaps = async () => {
     if (gapCount === 0) return;
     if (!window.confirm(`Generate questions for ${gapCount} uncovered requirement${gapCount === 1 ? '' : 's'}? Existing questions are kept.`)) return;
-    setGeneratingGaps(true); setError('');
-    try {
-      const result = await api.generateGapQuestions(token, kitId);
-      setKit(result.kit);
-      const added = Array.isArray(result.gaps?.addedQuestionIds) ? result.gaps.addedQuestionIds.length : 0;
-      const remaining = Array.isArray(result.gaps?.remainingGaps) ? result.gaps.remainingGaps.length : 0;
-      setNotice(added === 0
-        ? 'No new questions were added for the remaining gaps.'
-        : `${added} question${added === 1 ? '' : 's'} added${remaining > 0 ? `, ${remaining} gap${remaining === 1 ? '' : 's'} still uncovered` : ''}.`);
-    } catch (requestError) { setError(messageFor(requestError, 'We could not generate questions for the gaps.')); }
-    finally { setGeneratingGaps(false); }
+    await startKitJob('gaps');
   };
 
-  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion, regenerate, generateGaps, reload: load };
+  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion, regenerate, generateGaps, reload: load, kitJob, kitJobState, kitJobActive, kitJobPollError, resumingJob, resumeKitJob, retryKitJob, dismissKitJob };
 }

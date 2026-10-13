@@ -1,7 +1,7 @@
 // Turns a finished pipeline result into the stored kit and prepares any kit for
-// storage. A background kit job saves the kit itself, so this mirrors exactly
-// what the browser used to send to POST /api/kits (frontend/lib/kitAdapter.js
-// kitFromPipeline), and runs the same checks POST /api/kits runs.
+// storage. A background kit job saves the kit itself, so this builds exactly
+// the kit the browser used to build from the pipeline response and send to
+// POST /api/kits, and runs the same checks POST /api/kits runs.
 
 const kitBuilderService = require('./kitBuilderService');
 const practiceService = require('./practiceService');

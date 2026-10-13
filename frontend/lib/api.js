@@ -1,12 +1,18 @@
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '/api/proxy').replace(/\/$/, '');
 
+// Every request is cut off client-side after this long. Long generations run as
+// background jobs, so no single request needs more than a few seconds.
+export const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
+
 export class ApiError extends Error {
-  constructor(message, { status = 0, code = 'API_ERROR', details = null } = {}) {
+  constructor(message, { status = 0, code = 'API_ERROR', details = null, jobId = null } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.details = details;
+    // Set on 409 JOB_ALREADY_RUNNING: the job that is already running.
+    this.jobId = jobId;
   }
 }
 
@@ -23,6 +29,7 @@ const readError = async (response) => {
       status: response.status,
       code: error.code || 'API_ERROR',
       details: error.details || null,
+      jobId: typeof error.jobId === 'string' ? error.jobId : null,
     });
   }
   return new ApiError(
@@ -31,22 +38,33 @@ const readError = async (response) => {
   );
 };
 
-export async function apiRequest(path, { token, body, ...options } = {}) {
+export async function apiRequest(path, { token, body, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...options } = {}) {
   const headers = new Headers(options.headers || {});
   if (body !== undefined) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
+      signal: controller.signal,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  } catch {
+  } catch (fetchError) {
+    if (controller.signal.aborted) {
+      throw new ApiError(`The service did not answer within ${Math.round(timeoutMs / 1000)} seconds. Please try again.`, {
+        code: 'REQUEST_TIMEOUT',
+      });
+    }
     throw new ApiError('Unable to reach the interview-prep service. Check your connection and try again.', {
       code: 'NETWORK_ERROR',
+      details: fetchError instanceof Error ? fetchError.name : null,
     });
+  } finally {
+    clearTimeout(timer);
   }
 
   if (response.status === 401 && typeof window !== 'undefined') {
@@ -72,7 +90,10 @@ export const api = {
   createKit: (token, body) => apiRequest('/api/kits', { method: 'POST', token, body }),
   updateKit: (token, id, body) => apiRequest(`/api/kits/${encodeURIComponent(id)}`, { method: 'PUT', token, body }),
   deleteKit: (token, id) => apiRequest(`/api/kits/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  // Generation endpoints answer 202 { jobId }; poll getJob for progress.
   generateKit: (token, body) => apiRequest('/api/interview-prep', { method: 'POST', token, body }),
+  getJob: (token, jobId) => apiRequest(`/api/jobs/${encodeURIComponent(jobId)}`, { token }),
+  resumeJob: (token, jobId) => apiRequest(`/api/jobs/${encodeURIComponent(jobId)}/resume`, { method: 'POST', token, body: {} }),
   editQuestion: (token, kitId, questionId, body) =>
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/questions/${encodeURIComponent(questionId)}`, { method: 'PATCH', token, body }),
   reorderQuestions: (token, kitId, questionIds) =>
