@@ -1,4 +1,4 @@
-const { describe, it } = require('node:test');
+const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const jwt = require('jsonwebtoken');
@@ -12,7 +12,7 @@ const {
 const { BATCH_FIXTURE_CONTEXT } = require('../src/services/batchFixtureContext');
 const { researchCompany } = require('../src/services/companyResearchService');
 const { researchCompanyPipeline } = require('../src/services/companyResearchPipelineService');
-const { generateContent, LlmError, MAX_LLM_RESPONSE_LENGTH, DEFAULT_GEMINI_MODEL, getGeminiModel } = require('../src/services/geminiClient');
+const { generateContent, LlmError, MAX_LLM_RESPONSE_LENGTH, DEFAULT_GEMINI_MODEL, getGeminiModel, resetLlmCooldowns } = require('../src/services/geminiClient');
 const { extractRequirements } = require('../src/services/requirementExtractionService');
 const { generateQuestions } = require('../src/services/questionGenerationService');
 const { checkCoverage } = require('../src/services/coverageService');
@@ -410,6 +410,24 @@ describe('bounded and structured company research', () => {
 });
 
 describe('LLM failure handling and untrusted-data boundaries', () => {
+  // These cases pin a single-model chain with one immediate retry, so the
+  // bounded-retry contract is asserted exactly. The fallback chain, backoff and
+  // cooldown are covered in llmResilience.test.js.
+  const PINNED_ENV = { LLM_MAX_RETRIES: '1', LLM_RETRY_BASE_MS: '0', GEMINI_FALLBACK_MODELS: '' };
+  let savedEnv;
+  beforeEach(() => {
+    savedEnv = Object.fromEntries(Object.keys(PINNED_ENV).map((name) => [name, process.env[name]]));
+    Object.assign(process.env, PINNED_ENV);
+    resetLlmCooldowns();
+  });
+  afterEach(() => {
+    for (const [name, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    resetLlmCooldowns();
+  });
+
   it('uses the configured Gemini model and disables SDK-level retries', async () => {
     const calls = [];
     const result = await generateContent({ contents: 'hello', client: fakeGeminiClient('{"ok":true}', calls) });
@@ -655,12 +673,11 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
 
   it('keeps OpenRouter as a fallback only for transient Gemini failures', async () => {
     const source = require('node:fs').readFileSync(require.resolve('../src/services/geminiClient'), 'utf8');
-    // Gemini is tried first; OpenRouter is only appended when its key exists.
-    assert.match(source, /\['gemini',\s*'openrouter'\]/);
-    assert.match(source, /if \(process\.env\.OPENROUTER_API_KEY\)/);
-    // An injected client restricts the chain to Gemini, so tests can never
-    // reach the network through the fallback.
-    assert.match(source, /if \(clientOverride\) return \['gemini'\]/);
+    // Gemini models come first; OpenRouter is only appended last when its key
+    // exists. An injected client restricts the chain to injected clients, so
+    // tests can never reach the network through the fallback.
+    assert.match(source, /client \? Boolean\(openRouterOverride\) : Boolean\(openRouterOverride \|\| process\.env\.OPENROUTER_API_KEY\)/);
+    assert.match(source, /if \(includeOpenRouter\) chain\.push\(\{ provider: 'openrouter'/);
 
     // A permanent Gemini failure must not be treated as a fallback trigger.
     const permanent = scriptedGeminiClient([upstreamError(400, 'invalid request parameters')]);

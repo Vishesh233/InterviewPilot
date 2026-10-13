@@ -8,6 +8,7 @@ const {
   classifyLlmError,
   isTimeoutError,
   LlmError,
+  resetLlmCooldowns,
 } = require('../src/services/geminiClient');
 
 // A Gemini-shaped client whose generateContent replays the scripted outcomes in
@@ -37,15 +38,31 @@ const abortError = () => {
 describe('LLM error classification', () => {
   let warnings;
   let originalWarn;
+  let originalInfo;
+  // These cases pin a single-model chain with one immediate retry; the fallback
+  // chain, backoff and cooldown are covered in llmResilience.test.js.
+  const PINNED_ENV = { LLM_MAX_RETRIES: '1', LLM_RETRY_BASE_MS: '0', GEMINI_FALLBACK_MODELS: '' };
+  let savedEnv;
 
   beforeEach(() => {
     warnings = [];
     originalWarn = console.warn;
+    originalInfo = console.info;
     console.warn = (...args) => { warnings.push(args.join(' ')); };
+    console.info = () => {};
+    savedEnv = Object.fromEntries(Object.keys(PINNED_ENV).map((name) => [name, process.env[name]]));
+    Object.assign(process.env, PINNED_ENV);
+    resetLlmCooldowns();
   });
 
   afterEach(() => {
     console.warn = originalWarn;
+    console.info = originalInfo;
+    for (const [name, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    resetLlmCooldowns();
   });
 
   it('classifies the OpenAI SDK APIConnectionTimeoutError (name "Error") as a timeout', () => {
@@ -245,14 +262,15 @@ describe('LLM error classification', () => {
     assert.equal(lines.length, 2);
     const entries = lines.map((line) => JSON.parse(line.slice('LLM attempt failed.'.length)));
     assert.deepEqual(entries.map((entry) => entry.attempt), [1, 2]);
+    assert.deepEqual(entries.map((entry) => entry.action), ['retry', 'give-up']);
     for (const entry of entries) {
       assert.equal(entry.provider, 'gemini');
       assert.equal(typeof entry.model, 'string');
       assert.equal(entry.stage, 'Question generation');
-      assert.equal(entry.httpStatus, 503);
+      assert.equal(entry.status, 503);
       assert.equal(entry.errorClass, 'ApiError');
       assert.equal(entry.errorCode, 'LLM_PROVIDER_UNAVAILABLE');
-      assert.equal(typeof entry.durationMs, 'number');
+      assert.equal(typeof entry.latencyMs, 'number');
       assert.equal(entry.classification, 'overloaded');
     }
     const joined = lines.join('\n');

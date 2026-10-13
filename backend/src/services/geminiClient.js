@@ -5,23 +5,35 @@ const { GoogleGenAI } = require('@google/genai');
 // only; it is never logged, echoed, or embedded in a request we record.
 const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
-// Match the previous provider budget: one bounded upstream attempt plus our own
-// single transient retry. `retryOptions.attempts: 1` disables the SDK's own
-// retry loop (it otherwise defaults to 5 attempts), so this adapter stays the
-// single, auditable place where retries are decided.
+// Gemini models tried, in order, after GEMINI_MODEL when GEMINI_FALLBACK_MODELS
+// is unset. Setting the variable to an empty value disables Gemini fallbacks.
+const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+
+// Probe timeouts used by scripts/llm-check.js for its single diagnostic calls.
+// Pipeline calls use LLM_TIMEOUT_MS (getLlmTimeoutMs) instead.
 const GEMINI_TIMEOUT_MS = 30_000;
 
-// OpenRouter is retained as a SECONDARY provider. It is only consulted when its
-// key is configured and Gemini failed transiently, so a bad or missing Gemini
-// key still fails fast and clearly instead of silently calling a second vendor.
+// OpenRouter is retained as the LAST entry of the fallback chain. It is only
+// consulted when its key is configured and every Gemini model failed
+// transiently, so a bad or missing Gemini key still fails fast and clearly
+// instead of silently calling a second vendor.
 const DEFAULT_OPENROUTER_MODEL = 'dots-studio/dots-3-note-preview:free';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const OPENROUTER_TIMEOUT_MS = 30_000;
 
+// Resilience defaults. Each is overridable through the env var of the same
+// meaning and read per call, so tests and operators can change them without a
+// restart.
+const DEFAULT_LLM_MAX_RETRIES = 3;
+const DEFAULT_LLM_RETRY_BASE_MS = 2_000;
+const LLM_RETRY_CAP_MS = 30_000;
+const DEFAULT_LLM_COOLDOWN_MS = 60_000;
+const DEFAULT_LLM_TIMEOUT_MS = 90_000;
+
 let geminiClient;
-let geminiClientApiKey;
+let geminiClientKey;
 let openRouterClient;
-let openRouterClientApiKey;
+let openRouterClientKey;
 
 const MAX_LLM_RESPONSE_LENGTH = 100_000;
 
@@ -47,6 +59,34 @@ class LlmError extends Error {
     this.isPublic = true;
   }
 }
+
+// Non-negative integer env var. Blank or unset uses the default; anything else
+// that is not an integer is a configuration error, never silently ignored.
+const readIntEnv = (name, fallback) => {
+  const raw = process.env[name];
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) return fallback;
+  if (!/^\d+$/.test(value)) {
+    throw new LlmError('LLM_INVALID_CONFIG', `${name} must be a non-negative integer.`, 500);
+  }
+  return Number(value);
+};
+
+const getLlmMaxRetries = () => readIntEnv('LLM_MAX_RETRIES', DEFAULT_LLM_MAX_RETRIES);
+const getLlmRetryBaseMs = () => readIntEnv('LLM_RETRY_BASE_MS', DEFAULT_LLM_RETRY_BASE_MS);
+const getLlmCooldownMs = () => readIntEnv('LLM_COOLDOWN_MS', DEFAULT_LLM_COOLDOWN_MS);
+const getLlmTimeoutMs = () => readIntEnv('LLM_TIMEOUT_MS', DEFAULT_LLM_TIMEOUT_MS);
+
+// GEMINI_FALLBACK_MODELS: unset uses the built-in list, an empty value means no
+// Gemini fallbacks. The primary model and duplicates are dropped.
+const getGeminiFallbackModels = () => {
+  const raw = process.env.GEMINI_FALLBACK_MODELS;
+  const list = raw === undefined
+    ? DEFAULT_GEMINI_FALLBACK_MODELS
+    : raw.split(',').map((model) => model.trim()).filter(Boolean);
+  const primary = getGeminiModel();
+  return [...new Set(list)].filter((model) => model !== primary);
+};
 
 const TIMEOUT_ERROR_NAMES = new Set(['AbortError', 'TimeoutError', 'APIConnectionTimeoutError']);
 const TIMEOUT_ERROR_CODES = new Set([
@@ -75,6 +115,26 @@ const isTimeoutError = (error, depth = 0) => {
   return isTimeoutError(error.cause, depth + 1);
 };
 
+// A dropped or refused connection (undici's "fetch failed" carries the socket
+// error as its cause; the OpenAI SDK raises APIConnectionError) is transient.
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EPIPE',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'UND_ERR_SOCKET',
+]);
+
+const isNetworkError = (error, depth = 0) => {
+  if (!error || typeof error !== 'object' || depth > 3) return false;
+  if (typeof OpenAI.APIConnectionError === 'function' && error instanceof OpenAI.APIConnectionError) return true;
+  if (NETWORK_ERROR_CODES.has(error.code)) return true;
+  if (error.name === 'TypeError' && error.message === 'fetch failed') return true;
+  return isNetworkError(error.cause, depth + 1);
+};
+
 // Gemini answers a request it cancelled server-side (typically near its own
 // deadline) with HTTP 499 / status "CANCELLED". That is transient, so it is
 // treated as a timeout; every other 4xx stays permanent.
@@ -91,6 +151,9 @@ const safeLlmMessage = (error) => {
   if (isTimeoutError(error) || isCancelledError(error)) {
     return new LlmError('LLM_TIMEOUT', 'The model request timed out.', 504);
   }
+  if (isNetworkError(error)) {
+    return new LlmError('LLM_NETWORK_ERROR', 'The connection to the model provider failed.', 502);
+  }
   return new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
 };
 
@@ -99,6 +162,7 @@ const CLASSIFICATION_BY_CODE = {
   LLM_TIMEOUT: 'timeout',
   LLM_PROVIDER_UNAVAILABLE: 'overloaded',
   LLM_RATE_LIMITED: 'rate_limited',
+  LLM_NETWORK_ERROR: 'network',
 };
 
 const classifyLlmError = (error) => {
@@ -106,66 +170,106 @@ const classifyLlmError = (error) => {
   return CLASSIFICATION_BY_CODE[safe.code] || 'permanent';
 };
 
-// One structured line per failed provider attempt. Only metadata is logged:
-// never keys, prompts, or response bodies.
-const logFailedAttempt = ({ provider, model, stage, attempt, rawError, safeError, startedAt, thinking }) => {
-  const status = Number(rawError?.status || rawError?.response?.status);
-  console.warn('LLM attempt failed.', JSON.stringify({
-    provider,
-    model,
-    ...(provider === 'gemini' ? { thinking: thinking || null } : {}),
-    stage: stage || null,
-    attempt,
-    httpStatus: Number.isFinite(status) && status > 0 ? status : null,
-    errorClass: rawError?.constructor?.name || rawError?.name || null,
-    errorCode: safeError.code,
-    durationMs: Date.now() - startedAt,
-    classification: classifyLlmError(safeError),
-  }));
-};
-
-// The provider is a third-party pool, so a single call can transiently fail
-// (429 / 5xx / timeout / a success-shaped body with no choice) while the very
-// next call succeeds. Retry is deliberately bounded to a single extra attempt
-// for those transient codes only. Validation, schema, malformed JSON, and
-// authentication failures are never retried, and the retry cannot recurse.
-//
-// Transience is decided by the safe code alone. Those three codes are produced
-// by safeLlmMessage for exactly the upstream 429 / 5xx / timeout cases, and every
-// other code (including authentication, bad-request, and schema failures) is
-// treated as permanent. The status is deliberately not used as a second signal:
-// safeLlmMessage gives a permanent failure such as 401 the default status 502,
-// so a status check would wrongly retry it.
+// Transience is decided by the safe code alone. Those codes are produced by
+// safeLlmMessage for exactly the upstream 429 / 5xx / timeout / 499 / network
+// cases; every other code (authentication, bad request, schema, invalid config,
+// a rejected thinking setting) is permanent and never retried. The status is
+// deliberately not used as a second signal: safeLlmMessage gives a permanent
+// failure such as 401 the default status 502, so a status check would wrongly
+// retry it.
 const TRANSIENT_LLM_CODES = new Set([
   'LLM_PROVIDER_UNAVAILABLE',
   'LLM_RATE_LIMITED',
   'LLM_TIMEOUT',
+  'LLM_NETWORK_ERROR',
 ]);
-const MAX_TRANSIENT_RETRIES = 1;
-const RETRY_DELAY_MS = 250;
 
 const isTransientUpstreamError = (error) =>
   error instanceof LlmError && TRANSIENT_LLM_CODES.has(error.code);
 
+const rawStatusOf = (error) => {
+  const status = Number(error?.status || error?.response?.status);
+  return Number.isFinite(status) && status > 0 ? status : null;
+};
+
+// 503 / 504 / 499 mean the model itself is overloaded or cutting requests, so
+// it is put in cooldown. A 429 or a client-side timeout is not.
+const COOLDOWN_STATUSES = new Set([499, 503, 504]);
+const triggersCooldown = (error) => COOLDOWN_STATUSES.has(rawStatusOf(error)) || isCancelledError(error);
+
+const readHeader = (error, name) => {
+  const headers = error?.headers ?? error?.response?.headers;
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') return headers.get(name) ?? undefined;
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name);
+  return key === undefined ? undefined : headers[key];
+};
+
+// Retry-After as delta-seconds or an HTTP date. Gemini puts the same hint in a
+// google.rpc.RetryInfo `retryDelay` ("12s") inside the error body instead of a
+// header, so that is read as well. Returns null when no hint is present.
+const retryAfterMsOf = (error, now = Date.now()) => {
+  const header = readHeader(error, 'retry-after');
+  if (header !== undefined && header !== null && String(header).trim()) {
+    const value = String(header).trim();
+    if (/^\d+(\.\d+)?$/.test(value)) return Math.round(Number(value) * 1000);
+    const date = Date.parse(value);
+    if (Number.isFinite(date)) return Math.max(0, date - now);
+  }
+  const match = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(String(error?.message || ''));
+  return match ? Math.round(Number(match[1]) * 1000) : null;
+};
+
+// Exponential backoff with full jitter: a uniform delay in
+// [0, min(cap, base * 2^(attempt-1))). A Retry-After hint replaces it, capped.
+const backoffDelayMs = ({ attempt, baseMs, retryAfterMs }) => {
+  if (retryAfterMs !== null && retryAfterMs !== undefined) return Math.min(LLM_RETRY_CAP_MS, retryAfterMs);
+  const ceiling = Math.min(LLM_RETRY_CAP_MS, baseMs * 2 ** (attempt - 1));
+  return Math.floor(Math.random() * ceiling);
+};
+
 const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
-// Performs at most one retry. Returns the LlmError to throw when every
-// permitted attempt has failed, so the caller still surfaces the existing
-// sanitized provider error rather than a new or hidden failure.
-const requestCompletionWithRetry = async (create) => {
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await create(attempt + 1);
-    } catch (error) {
-      if (attempt >= MAX_TRANSIENT_RETRIES || !isTransientUpstreamError(error)) {
-        throw error;
-      }
-      attempt += 1;
-      await wait(RETRY_DELAY_MS);
-    }
-  }
+// In-memory cooldown per chain entry. It is process local by design: it only
+// steers this process away from a model that is currently answering 503/504/499.
+const cooldowns = new Map();
+const entryKey = (entry) => `${entry.provider}:${entry.model}`;
+
+const logCooldown = (entry, event, details = {}) => {
+  console.warn('LLM model cooldown.', JSON.stringify({
+    provider: entry.provider,
+    model: entry.model,
+    event,
+    ...details,
+  }));
 };
+
+const enterCooldown = (entry, cooldownMs, status) => {
+  if (cooldownMs <= 0) return;
+  const key = entryKey(entry);
+  const active = cooldowns.has(key) && cooldowns.get(key) > Date.now();
+  cooldowns.set(key, Date.now() + cooldownMs);
+  if (!active) logCooldown(entry, 'enter', { status, cooldownMs });
+};
+
+const isInCooldown = (entry) => {
+  const key = entryKey(entry);
+  if (!cooldowns.has(key)) return false;
+  if (cooldowns.get(key) > Date.now()) return true;
+  cooldowns.delete(key);
+  logCooldown(entry, 'leave', { reason: 'expired' });
+  return false;
+};
+
+const clearCooldown = (entry) => {
+  const key = entryKey(entry);
+  if (!cooldowns.has(key)) return;
+  cooldowns.delete(key);
+  logCooldown(entry, 'leave', { reason: 'succeeded' });
+};
+
+// Test hook: cooldown is module state and must not leak between tests.
+const resetLlmCooldowns = () => { cooldowns.clear(); };
 
 const getGeminiClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -173,18 +277,19 @@ const getGeminiClient = () => {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
   }
 
-  if (!geminiClient || geminiClientApiKey !== apiKey) {
+  const timeout = getLlmTimeoutMs();
+  const cacheKey = `${apiKey}\u0000${timeout}`;
+  if (!geminiClient || geminiClientKey !== cacheKey) {
     geminiClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: GEMINI_TIMEOUT_MS,
-        // 1 means a single attempt with no SDK-level retries, matching the
-        // previous provider's `maxRetries: 0` and keeping our bounded retry the
-        // only retry in the system.
+        timeout,
+        // 1 means a single attempt with no SDK-level retries, so generateContent
+        // below stays the single, auditable place where retries are decided.
         retryOptions: { attempts: 1 },
       },
     });
-    geminiClientApiKey = apiKey;
+    geminiClientKey = cacheKey;
   }
 
   return geminiClient;
@@ -196,14 +301,16 @@ const getOpenRouterClient = () => {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
   }
 
-  if (!openRouterClient || openRouterClientApiKey !== apiKey) {
+  const timeout = getLlmTimeoutMs();
+  const cacheKey = `${apiKey}\u0000${timeout}`;
+  if (!openRouterClient || openRouterClientKey !== cacheKey) {
     openRouterClient = new OpenAI({
       apiKey,
       baseURL: OPENROUTER_BASE_URL,
       maxRetries: 0,
-      timeout: OPENROUTER_TIMEOUT_MS,
+      timeout,
     });
-    openRouterClientApiKey = apiKey;
+    openRouterClientKey = cacheKey;
   }
 
   return openRouterClient;
@@ -236,6 +343,52 @@ const parseGeminiThinking = (raw) => {
 };
 
 const getGeminiThinkingConfig = () => parseGeminiThinking(process.env.GEMINI_THINKING);
+
+// GEMINI_THINKING_OVERRIDES: "model=SETTING,model=SETTING". A listed model uses
+// its own setting (an empty setting sends no thinkingConfig); every other
+// Gemini model in the chain uses GEMINI_THINKING.
+const parseGeminiThinkingOverrides = (raw) => {
+  const overrides = new Map();
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) return overrides;
+  for (const pair of value.split(',')) {
+    const separator = pair.indexOf('=');
+    const model = separator > 0 ? pair.slice(0, separator).trim() : '';
+    if (!model) {
+      throw new LlmError(
+        'LLM_INVALID_CONFIG',
+        'GEMINI_THINKING_OVERRIDES must be a comma-separated list of model=setting pairs.',
+        500
+      );
+    }
+    const setting = pair.slice(separator + 1).trim();
+    try {
+      overrides.set(model, { setting, thinkingConfig: parseGeminiThinking(setting) });
+    } catch (error) {
+      if (!(error instanceof LlmError)) throw error;
+      throw new LlmError(
+        'LLM_INVALID_CONFIG',
+        `GEMINI_THINKING_OVERRIDES has an invalid setting for ${model}; use empty, one of ${GEMINI_THINKING_LEVELS.join(', ')}, or an integer token budget.`,
+        500
+      );
+    }
+  }
+  return overrides;
+};
+
+// The thinking setting for one Gemini model, with where it came from so a
+// rejection can name the exact variable.
+const resolveGeminiThinking = (model, overrides) => {
+  if (overrides.has(model)) {
+    const { setting, thinkingConfig } = overrides.get(model);
+    return { thinkingConfig, thinkingSetting: setting, thinkingSource: `GEMINI_THINKING_OVERRIDES[${model}]` };
+  }
+  return {
+    thinkingConfig: getGeminiThinkingConfig(),
+    thinkingSetting: (process.env.GEMINI_THINKING || '').trim(),
+    thinkingSource: 'GEMINI_THINKING',
+  };
+};
 
 // (including `nullable`), so the schema is forwarded as-is. `thinkingConfig` is
 // sent only when GEMINI_THINKING is set; by default the model's own thinking
@@ -328,8 +481,7 @@ const buildResponseFormat = ({ responseMimeType, responseSchema }) => {
 // OpenRouter rejects a request outright when no eligible endpoint can honor the
 // structured-output parameters, for example a 400/404 "No endpoints found that
 // support structured outputs" or "Provider does not support response_format".
-// That is a permanent rejection, so it is never retried by the transient
-// retry above.
+// That is a permanent rejection, so it is never retried as transient.
 //
 // Only that specific rejection may fall back to asking for a JSON object as
 // text. This is NOT a relaxation of validation: the callers still JSON.parse the
@@ -364,45 +516,69 @@ const sanitizeLlmError = (error) => {
   return safe;
 };
 
-// A missing candidate is not an OpenRouter concern here: Gemini can return a
-// 200 with no usable text (a safety block, or a candidate that only carried
-// reasoning), which is an empty model response, not a missing completion.
-const requestGemini = async ({ contents, responseMimeType, responseSchema, maxOutputTokens, stage, client: clientOverride }) => {
-  const client = clientOverride || getGeminiClient();
-  const thinkingConfig = getGeminiThinkingConfig();
-  const config = buildGeminiConfig({ responseMimeType, responseSchema, maxOutputTokens, thinkingConfig });
-  const model = getGeminiModel();
-
-  return requestCompletionWithRetry(async (attempt) => {
-    const startedAt = Date.now();
-    try {
-      return extractGeminiText(
-        await client.models.generateContent({
-          model,
-          contents,
-          config,
-        })
-      );
-    } catch (error) {
-      let safeError = sanitizeLlmError(error);
-      // A 400 while a thinking setting is configured is most likely the model
-      // rejecting that setting: keep it permanent but say so explicitly.
-      if (thinkingConfig && safeError.code === 'LLM_REQUEST_FAILED' && Number(error?.status) === 400) {
-        safeError = new LlmError(
-          'LLM_THINKING_CONFIG_REJECTED',
-          `The model request was rejected (400) while GEMINI_THINKING=${process.env.GEMINI_THINKING.trim()} is set; the model may not support this thinking setting.`,
-          502
-        );
-      }
-      logFailedAttempt({ provider: 'gemini', model, stage, attempt, rawError: error, safeError, startedAt, thinking: thinkingConfig });
-      throw safeError;
-    }
-  });
+// Shared post-conditions. These run regardless of provider, so a model response
+// is never trusted: it must be a non-empty, bounded string. Parsing and
+// application-level schema validation stay in the calling services.
+const assertUsableText = (text) => {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+  }
+  if (text.length > MAX_LLM_RESPONSE_LENGTH) {
+    throw new LlmError('LLM_RESPONSE_TOO_LARGE', 'The model response exceeded the size limit.', 502);
+  }
+  return { text };
 };
 
-const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, maxOutputTokens, stage, openRouterClient }) => {
-  const openai = openRouterClient || getOpenRouterClient();
-  const model = getOpenRouterModel();
+// The ordered fallback chain: GEMINI_MODEL, then GEMINI_FALLBACK_MODELS, then
+// OpenRouter when its key is set. Thinking settings are resolved (and validated)
+// up front, so an invalid setting fails before any model is called. When a
+// client is injected (tests), the chain is restricted to injected clients so no
+// test can ever reach the network: OpenRouter is included only when an
+// OpenRouter client is injected too.
+const buildModelChain = ({ client, openRouterClient: openRouterOverride } = {}) => {
+  const overrides = parseGeminiThinkingOverrides(process.env.GEMINI_THINKING_OVERRIDES);
+  const chain = [getGeminiModel(), ...getGeminiFallbackModels()].map((model) => ({
+    provider: 'gemini',
+    model,
+    ...resolveGeminiThinking(model, overrides),
+  }));
+  const includeOpenRouter = client ? Boolean(openRouterOverride) : Boolean(openRouterOverride || process.env.OPENROUTER_API_KEY);
+  if (includeOpenRouter) chain.push({ provider: 'openrouter', model: getOpenRouterModel() });
+  return chain;
+};
+
+// One structured line per attempt, success or failure. Only metadata is logged: never keys, prompts, or response bodies.
+const logAttempt = ({ entry, stage, attempt, rawError, safeError, classification, startedAt, action, delayMs }) => {
+  const line = {
+    provider: entry.provider,
+    model: entry.model,
+    ...(entry.provider === 'gemini' ? { thinking: entry.thinkingConfig || null } : {}),
+    stage: stage || null,
+    attempt,
+    classification,
+    status: rawError ? rawStatusOf(rawError) : 200,
+    ...(rawError ? { errorClass: rawError?.constructor?.name || rawError?.name || null, errorCode: safeError.code } : {}),
+    latencyMs: startedAt === undefined ? 0 : Date.now() - startedAt,
+    action,
+    ...(delayMs === undefined ? {} : { delayMs }),
+  };
+  if (rawError) console.warn('LLM attempt failed.', JSON.stringify(line));
+  else console.info('LLM attempt succeeded.', JSON.stringify(line));
+};
+
+const callGemini = async (entry, input) => {
+  const client = input.client || getGeminiClient();
+  const config = buildGeminiConfig({ ...input, thinkingConfig: entry.thinkingConfig });
+  return extractGeminiText(
+    await client.models.generateContent({
+      model: entry.model,
+      contents: input.contents,
+      config,
+    })
+  );
+};
+
+const buildOpenRouterRequest = ({ contents, responseMimeType, responseSchema, maxOutputTokens }, model) => {
   const request = {
     model,
     messages: [
@@ -424,98 +600,162 @@ const requestOpenRouter = async ({ contents, responseMimeType, responseSchema, m
       require_parameters: true,
     };
   }
+  return request;
+};
 
-  // The retry covers only the upstream request itself. A missing choice is a
-  // transient provider outcome (OpenRouter can return an error-shaped body on
-  // the success path), so it is retried and then reported as an unavailable
-  // provider rather than as an empty model response.
-  const callProvider = () => requestCompletionWithRetry(async (attempt) => {
-    const startedAt = Date.now();
-    try {
-      const raw = await openai.chat.completions.create(request);
-      const choice = raw?.choices?.[0];
-      if (choice === undefined || choice === null) {
-        throw new LlmError(
-          'LLM_PROVIDER_UNAVAILABLE',
-          'The model provider returned no completion.',
-          502
-        );
-      }
-      return choice.message?.content;
-    } catch (error) {
-      const safeError = sanitizeLlmError(error);
-      logFailedAttempt({ provider: 'openrouter', model, stage, attempt, rawError: error, safeError, startedAt });
-      throw safeError;
+// A missing choice is a transient provider outcome (OpenRouter can return an
+// error-shaped body on the success path), so it is reported as an unavailable
+// provider and retried like one.
+//
+// Bounded fallback for a model whose endpoint cannot honor json_schema: ask for
+// a JSON object as text instead. It happens at most once per generateContent
+// call (the request is mutated), only for that specific permanent rejection,
+// and `require_parameters: true` is kept so the endpoint must still support
+// `response_format`. The callers' own schema validation remains the authority.
+const callOpenRouter = async (entry, input, state) => {
+  const openai = input.openRouterClient || getOpenRouterClient();
+  if (!state.openRouterRequest) state.openRouterRequest = buildOpenRouterRequest(input, entry.model);
+  const request = state.openRouterRequest;
+
+  const create = async () => {
+    const raw = await openai.chat.completions.create(request);
+    const choice = raw?.choices?.[0];
+    if (choice === undefined || choice === null) {
+      throw new LlmError('LLM_PROVIDER_UNAVAILABLE', 'The model provider returned no completion.', 502);
     }
-  });
+    return choice.message?.content;
+  };
 
   try {
-    return await callProvider();
+    return await create();
   } catch (error) {
-    // Bounded fallback for a model whose endpoint cannot honor json_schema:
-    // ask for a JSON object as text instead. It is attempted at most once, only
-    // for that specific permanent rejection, and `require_parameters: true` is
-    // kept so the endpoint must still support `response_format`. The callers'
-    // own schema validation remains the authority either way.
     const canDowngrade =
-      request.response_format?.type === 'json_schema' && error?.structuredOutputUnsupported === true;
+      request.response_format?.type === 'json_schema' && isStructuredOutputUnsupportedError(error);
     if (!canDowngrade) throw error;
-
+    console.warn('LLM structured output unsupported; retrying as json_object.', JSON.stringify({
+      provider: entry.provider,
+      model: entry.model,
+      stage: input.stage || null,
+      status: rawStatusOf(error),
+    }));
     request.response_format = { type: 'json_object' };
-    return callProvider();
+    return create();
   }
 };
 
-// Shared post-conditions. These run regardless of provider, so a model response
-// is never trusted: it must be a non-empty, bounded string. Parsing and
-// application-level schema validation stay in the calling services.
-const assertUsableText = (text) => {
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+// Decides what happens after a failed attempt on chain entry `index`.
+// - transient: retry on the same model until LLM_MAX_RETRIES is used up, then
+//   move to the next model;
+// - Gemini 404 (model not found): move to the next model immediately;
+// - a thinking setting rejected (400) by a FALLBACK model: skip that model;
+// - anything else is permanent: give up without retrying or falling back, so a
+//   misconfiguration is never hidden behind another model or vendor.
+const classifyAttempt = (entry, rawError, safeError) => {
+  if (safeError.code === 'LLM_THINKING_CONFIG_REJECTED') return 'thinking_rejected';
+  if (entry.provider === 'gemini' && rawStatusOf(rawError) === 404 && !isTransientUpstreamError(safeError)) {
+    return 'model_not_found';
   }
-  if (text.length > MAX_LLM_RESPONSE_LENGTH) {
-    throw new LlmError('LLM_RESPONSE_TOO_LARGE', 'The model response exceeded the size limit.', 502);
-  }
-  return { text };
-};
-
-// Gemini is primary. OpenRouter is consulted only when it is configured AND the
-// Gemini attempt failed transiently (rate limit / provider down / timeout). A
-// permanent Gemini failure — a missing, invalid, or unauthorized key, or a
-// rejected request — is surfaced immediately so a misconfiguration is never
-// hidden behind a second vendor. When a client is injected (tests), the chain is
-// restricted to injected clients so no test can ever reach the network: Gemini
-// only, or Gemini then OpenRouter when an OpenRouter client is injected too.
-const providerChain = (clientOverride, openRouterClientOverride) => {
-  if (clientOverride && openRouterClientOverride) return ['gemini', 'openrouter'];
-  if (clientOverride) return ['gemini'];
-  if (process.env.OPENROUTER_API_KEY) return ['gemini', 'openrouter'];
-  return ['gemini'];
+  return classifyLlmError(safeError);
 };
 
 const generateContent = async (input = {}) => {
-  const providers = providerChain(input.client, input.openRouterClient);
+  const chain = buildModelChain(input);
+  const maxRetries = getLlmMaxRetries();
+  const baseMs = getLlmRetryBaseMs();
+  const cooldownMs = getLlmCooldownMs();
+  const state = {};
 
   let lastError;
-  for (const provider of providers) {
-    const attempt = provider === 'gemini' ? requestGemini : requestOpenRouter;
-    try {
-      return assertUsableText(await attempt(input));
-    } catch (error) {
-      lastError = error;
-      const isLastProvider = provider === providers[providers.length - 1];
-      if (isLastProvider || !isTransientUpstreamError(error)) throw error;
+  for (let index = 0; index < chain.length; index += 1) {
+    const entry = chain[index];
+    const isLastModel = index === chain.length - 1;
+
+    if (isInCooldown(entry)) {
+      if (!isLastModel) {
+        console.warn('LLM model skipped.', JSON.stringify({
+          provider: entry.provider,
+          model: entry.model,
+          stage: input.stage || null,
+          classification: 'cooldown',
+          action: 'cooldown-skip',
+        }));
+        continue;
+      }
+      console.warn('LLM model cooldown ignored: last model in the chain.', JSON.stringify({
+        provider: entry.provider,
+        model: entry.model,
+        stage: input.stage || null,
+      }));
+    }
+
+    for (let attempt = 1; ; attempt += 1) {
+      const startedAt = Date.now();
+      try {
+        const raw = entry.provider === 'gemini'
+          ? await callGemini(entry, input)
+          : await callOpenRouter(entry, input, state);
+        const usable = assertUsableText(raw);
+        logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
+        clearCooldown(entry);
+        return usable;
+      } catch (error) {
+        let safeError = sanitizeLlmError(error);
+        // A 400 while a thinking setting is configured is most likely the model
+        // rejecting that setting: keep it permanent but say so explicitly.
+        if (entry.thinkingConfig && safeError.code === 'LLM_REQUEST_FAILED' && rawStatusOf(error) === 400) {
+          safeError = new LlmError(
+            'LLM_THINKING_CONFIG_REJECTED',
+            `The model request was rejected (400) while ${entry.thinkingSource}=${entry.thinkingSetting} is set for ${entry.model}; the model may not support this thinking setting.`,
+            502
+          );
+        }
+        lastError = safeError;
+        const classification = classifyAttempt(entry, error, safeError);
+        const transient = isTransientUpstreamError(safeError);
+        if (transient && triggersCooldown(error)) enterCooldown(entry, cooldownMs, rawStatusOf(error) ?? 499);
+
+        let action = 'give-up';
+        if (transient && attempt <= maxRetries) action = 'retry';
+        else if (!isLastModel && (transient || classification === 'model_not_found')) action = 'fallback';
+        else if (!isLastModel && classification === 'thinking_rejected' && index > 0) action = 'fallback';
+
+        const delayMs = action === 'retry'
+          ? backoffDelayMs({ attempt, baseMs, retryAfterMs: retryAfterMsOf(error) })
+          : undefined;
+        logAttempt({ entry, stage: input.stage, attempt, rawError: error, safeError, classification, startedAt, action, delayMs });
+
+        if (action === 'retry') {
+          await wait(delayMs);
+          continue;
+        }
+        if (action === 'fallback') {
+          if (classification === 'thinking_rejected') {
+            console.warn('LLM thinking setting rejected by fallback model; skipping it.', JSON.stringify({
+              model: entry.model,
+              setting: `${entry.thinkingSource}=${entry.thinkingSetting}`,
+              stage: input.stage || null,
+            }));
+          }
+          console.warn('LLM fallback.', JSON.stringify({
+            from: `${entry.provider}:${entry.model}`,
+            to: `${chain[index + 1].provider}:${chain[index + 1].model}`,
+            reason: classification,
+            stage: input.stage || null,
+          }));
+          break;
+        }
+        throw safeError;
+      }
     }
   }
-  throw lastError;
+  // Only reachable when every remaining model was skipped, which cannot happen
+  // because the last model ignores its cooldown; kept as a defensive throw.
+  throw lastError || new LlmError('LLM_PROVIDER_UNAVAILABLE', 'No model provider was available.', 502);
 };
 
-// An invalid GEMINI_THINKING is reported here (and fails every Gemini request
-// with LLM_INVALID_CONFIG), so a typo is visible at startup.
-const describeGeminiThinking = () => {
+const describeIntEnv = (read) => {
   try {
-    const thinkingConfig = getGeminiThinkingConfig();
-    return thinkingConfig ? { GEMINI_THINKING: process.env.GEMINI_THINKING.trim(), thinkingConfig } : 'unset (model default, no thinkingConfig sent)';
+    return read();
   } catch (error) {
     if (!(error instanceof LlmError)) throw error;
     return `invalid: ${error.message}`;
@@ -523,31 +763,41 @@ const describeGeminiThinking = () => {
 };
 
 // Active LLM configuration for the startup log. Reports only whether each key
-// is set, never the key itself.
+// is set, never the key itself. An invalid setting is reported here (and fails
+// every request with LLM_INVALID_CONFIG), so a typo is visible at startup.
 const describeLlmConfig = () => {
   const openRouterConfigured = Boolean(process.env.OPENROUTER_API_KEY);
   const openRouterModelSet = Boolean(process.env.OPENROUTER_MODEL && process.env.OPENROUTER_MODEL.trim());
+  let chain;
+  try {
+    chain = buildModelChain().map((entry) => (entry.provider === 'gemini'
+      ? { provider: 'gemini', model: entry.model, thinking: entry.thinkingConfig ? `${entry.thinkingSource}=${entry.thinkingSetting}` : 'model default' }
+      : {
+        provider: 'openrouter',
+        model: entry.model,
+        modelSource: openRouterModelSet
+          ? 'OPENROUTER_MODEL'
+          : `built-in default (OPENROUTER_MODEL is empty, using ${DEFAULT_OPENROUTER_MODEL})`,
+      }));
+  } catch (error) {
+    if (!(error instanceof LlmError)) throw error;
+    chain = `invalid: ${error.message}`;
+  }
   return {
     primary: {
       provider: 'gemini',
       model: getGeminiModel(),
       modelSource: process.env.GEMINI_MODEL && process.env.GEMINI_MODEL.trim() ? 'GEMINI_MODEL' : 'built-in default',
       keySet: Boolean(process.env.GEMINI_API_KEY),
-      timeoutMs: GEMINI_TIMEOUT_MS,
-      thinking: describeGeminiThinking(),
     },
-    fallback: openRouterConfigured
-      ? {
-        provider: 'openrouter',
-        model: getOpenRouterModel(),
-        modelSource: openRouterModelSet
-          ? 'OPENROUTER_MODEL'
-          : `built-in default (OPENROUTER_MODEL is empty, using ${DEFAULT_OPENROUTER_MODEL})`,
-        keySet: true,
-        timeoutMs: OPENROUTER_TIMEOUT_MS,
-      }
-      : 'disabled',
-    maxTransientRetriesPerProvider: MAX_TRANSIENT_RETRIES,
+    fallbackModelsSource: process.env.GEMINI_FALLBACK_MODELS === undefined ? 'built-in default' : 'GEMINI_FALLBACK_MODELS',
+    openRouter: openRouterConfigured ? { keySet: true } : 'disabled',
+    chain,
+    timeoutMs: describeIntEnv(getLlmTimeoutMs),
+    maxRetriesPerModel: describeIntEnv(getLlmMaxRetries),
+    retryBaseMs: describeIntEnv(getLlmRetryBaseMs),
+    retryCapMs: LLM_RETRY_CAP_MS,
+    cooldownMs: describeIntEnv(getLlmCooldownMs),
   };
 };
 
@@ -556,17 +806,22 @@ module.exports = {
   LlmError,
   MAX_LLM_RESPONSE_LENGTH,
   DEFAULT_GEMINI_MODEL,
+  DEFAULT_GEMINI_FALLBACK_MODELS,
   DEFAULT_OPENROUTER_MODEL,
   GEMINI_TIMEOUT_MS,
   OPENROUTER_TIMEOUT_MS,
   OPENROUTER_BASE_URL,
+  LLM_RETRY_CAP_MS,
   getGeminiModel,
+  getGeminiFallbackModels,
   getOpenRouterModel,
+  getLlmTimeoutMs,
   isTimeoutError,
   classifyLlmError,
   describeLlmConfig,
   buildGeminiConfig,
   parseGeminiThinking,
+  parseGeminiThinkingOverrides,
+  resetLlmCooldowns,
   GEMINI_THINKING_LEVELS,
 };
-
