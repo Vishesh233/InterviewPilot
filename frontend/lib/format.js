@@ -5,17 +5,6 @@ export function formatDate(value, options = {}) {
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', ...options }).format(date);
 }
 
-export function formatRelativeDate(value) {
-  if (!value) return 'Recently';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Recently';
-  const days = Math.floor((Date.now() - date.getTime()) / 86400000);
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
-  return formatDate(value);
-}
-
 export function percent(value) {
   return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : 0;
 }

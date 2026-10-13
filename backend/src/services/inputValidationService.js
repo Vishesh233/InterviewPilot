@@ -2,7 +2,6 @@ const MAX_JOB_DESCRIPTION_LENGTH = 50_000;
 // A job role is a short display title, not free text like the JD.
 const MAX_JOB_ROLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 20_000;
-const MAX_ID_LENGTH = 128;
 const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
@@ -39,7 +38,6 @@ module.exports = {
   MAX_JOB_DESCRIPTION_LENGTH,
   MAX_JOB_ROLE_LENGTH,
   MAX_TEXT_LENGTH,
-  MAX_ID_LENGTH,
   isPlainObject,
   hasUnsafeKeys,
   isBoundedString,

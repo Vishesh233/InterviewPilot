@@ -11,7 +11,6 @@ const { hasUnsafeKeys, isSafeIdentifier } = require('./inputValidationService');
 
 const MIN_CONFIDENCE = 1;
 const MAX_CONFIDENCE = 5;
-const CONFIDENCE_RANGE = Object.freeze({ min: MIN_CONFIDENCE, max: MAX_CONFIDENCE });
 const DEFAULT_PRACTICE = Object.freeze({
   confidence: null,
   covered: false,
@@ -298,7 +297,6 @@ const updatePracticeState = ({ kit, flashcardId, changes } = {}) => {
 module.exports = {
   MIN_CONFIDENCE,
   MAX_CONFIDENCE,
-  CONFIDENCE_RANGE,
   DEFAULT_PRACTICE,
   PracticeError,
   isValidConfidence,
