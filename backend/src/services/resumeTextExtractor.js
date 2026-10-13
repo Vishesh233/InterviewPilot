@@ -14,6 +14,7 @@
 // producing silent garbage.
 
 const zlib = require('node:zlib');
+const { isBoundedString } = require('./inputValidationService');
 
 const MAX_RESUME_FILE_BYTES = 2 * 1024 * 1024; // decoded upload size
 const MAX_RESUME_TEXT_LENGTH = 40_000; // characters of extracted text
@@ -23,8 +24,12 @@ const MIN_PRINTABLE_RATIO = 0.85;
 // Base64 grows a payload by 4/3, plus the JSON envelope and the other fields.
 const RESUME_REQUEST_JSON_LIMIT_BYTES = 4 * 1024 * 1024;
 
+// Decompression-bomb and size guards for PDFs. The upload itself is capped by
+// MAX_RESUME_FILE_BYTES; these bound the work done on its contents.
 const MAX_PDF_STREAM_COUNT = 128;
 const MAX_INFLATED_STREAM_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_INFLATED_BYTES = 16 * 1024 * 1024;
+const MAX_PDF_PAGES = 20;
 const PDF_DICTIONARY_WINDOW = 2048;
 
 const TEXT_EXTENSIONS = new Set(['txt', 'text', 'md', 'markdown']);
@@ -46,6 +51,28 @@ class ResumeFileError extends Error {
     this.isPublic = true;
   }
 }
+
+// MAX_RESUME_TEXT_LENGTH is the single resume-length limit: the API boundary,
+// the pipeline and the resume LLM services all reject longer text with this
+// same 400 RESUME_TOO_LONG error.
+const resumeTooLongError = () =>
+  new ResumeFileError(
+    'RESUME_TOO_LONG',
+    `The resume text is too long. The limit is ${MAX_RESUME_TEXT_LENGTH.toLocaleString('en-US')} characters.`,
+    400
+  );
+
+/** Guard for every service that receives resume text. Throws ResumeFileError. */
+const assertResumeTextWithinLimit = (text) => {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new ResumeFileError('RESUME_INVALID_PAYLOAD', 'Resume text must be a non-empty string.');
+  }
+  if (text.length > MAX_RESUME_TEXT_LENGTH) throw resumeTooLongError();
+  if (!isBoundedString(text, MAX_RESUME_TEXT_LENGTH)) {
+    throw new ResumeFileError('RESUME_INVALID_PAYLOAD', 'Resume text contains invalid control characters.');
+  }
+  return text;
+};
 
 const baseNameOf = (value) =>
   String(value).split(/[\\/]/).pop().replace(/[\u0000-\u001F\u007F]/g, '').trim();
@@ -256,22 +283,43 @@ const collectPdfStreams = (latin1) => {
   return streams;
 };
 
-/** Inflate a stream when it is FlateDecode; skip unsupported filters entirely. */
-const inflatePdfStream = (bytes, header) => {
+const pdfTooLargeError = () =>
+  new ResumeFileError(
+    'RESUME_PDF_TOO_LARGE',
+    `The PDF expands to too much content to read safely (limit ${MAX_TOTAL_INFLATED_BYTES / (1024 * 1024)} MB of decompressed data). Upload a smaller PDF or a text file.`,
+    400
+  );
+
+// zlib reports an exceeded maxOutputLength with ERR_BUFFER_TOO_LARGE.
+const isOutputLimitError = (error) => error?.code === 'ERR_BUFFER_TOO_LARGE';
+
+/**
+ * Inflate a stream when it is FlateDecode; skip unsupported filters entirely.
+ * A stream that cannot be decoded is skipped (returns null) — extraction is
+ * best-effort — but one that exceeds `maxOutput` is a size violation and throws.
+ */
+const inflatePdfStream = (bytes, header, maxOutput = MAX_INFLATED_STREAM_BYTES) => {
   const isFlate = /\/FlateDecode\b/.test(header);
   if (/\/Filter\b/.test(header) && !isFlate) return null;
   if (!isFlate) return bytes.toString('latin1');
   try {
-    return zlib.inflateSync(bytes, { maxOutputLength: MAX_INFLATED_STREAM_BYTES }).toString('latin1');
+    return zlib.inflateSync(bytes, { maxOutputLength: maxOutput }).toString('latin1');
   } catch (error) {
+    if (isOutputLimitError(error)) throw pdfTooLargeError();
     try {
       // A few generators omit the zlib header on an otherwise valid deflate stream.
-      return zlib.inflateRawSync(bytes, { maxOutputLength: MAX_INFLATED_STREAM_BYTES }).toString('latin1');
+      return zlib.inflateRawSync(bytes, { maxOutputLength: maxOutput }).toString('latin1');
     } catch (rawError) {
+      if (isOutputLimitError(rawError)) throw pdfTooLargeError();
       return null;
     }
   }
 };
+
+// Page objects are "/Type /Page" (the page tree root is "/Type /Pages").
+// Pages stored inside compressed object streams are not visible here; the
+// decompressed-size cap still bounds those files.
+const countPdfPages = (latin1) => (latin1.match(/\/Type\s*\/Page(?![A-Za-z])/g) || []).length;
 
 const extractPdfText = (buffer) => {
   const latin1 = buffer.toString('latin1');
@@ -286,10 +334,27 @@ const extractPdfText = (buffer) => {
     throw new ResumeFileError('RESUME_INVALID_FILE', 'The uploaded file is not a readable PDF.');
   }
 
+  const pageCount = countPdfPages(latin1);
+  if (pageCount > MAX_PDF_PAGES) {
+    throw new ResumeFileError(
+      'RESUME_PDF_TOO_MANY_PAGES',
+      `The PDF has ${pageCount} pages. Resumes are limited to ${MAX_PDF_PAGES} pages.`,
+      400
+    );
+  }
+
   const parts = [];
+  let inflatedBytes = 0;
   for (const stream of collectPdfStreams(latin1)) {
-    const content = inflatePdfStream(buffer.subarray(stream.start, stream.end), stream.header);
+    const remaining = MAX_TOTAL_INFLATED_BYTES - inflatedBytes;
+    const content = inflatePdfStream(
+      buffer.subarray(stream.start, stream.end),
+      stream.header,
+      Math.max(1, Math.min(MAX_INFLATED_STREAM_BYTES, remaining))
+    );
     if (!content) continue;
+    inflatedBytes += content.length;
+    if (inflatedBytes > MAX_TOTAL_INFLATED_BYTES) throw pdfTooLargeError();
     const text = extractTextFromContentStream(content);
     if (text) parts.push(text);
   }
@@ -343,13 +408,7 @@ const assertUsableResumeText = (text) => {
       422
     );
   }
-  if (text.length > MAX_RESUME_TEXT_LENGTH) {
-    throw new ResumeFileError(
-      'RESUME_TEXT_TOO_LONG',
-      `The resume text is longer than ${MAX_RESUME_TEXT_LENGTH} characters.`,
-      413
-    );
-  }
+  if (text.length > MAX_RESUME_TEXT_LENGTH) throw resumeTooLongError();
   if (text.length < MIN_RESUME_TEXT_LENGTH) {
     throw new ResumeFileError(
       'RESUME_TEXT_TOO_SHORT',
@@ -394,10 +453,15 @@ const extractResumeText = ({ buffer, fileName, mimeType } = {}) => {
 module.exports = {
   MAX_RESUME_FILE_BYTES,
   MAX_RESUME_TEXT_LENGTH,
+  MAX_INFLATED_STREAM_BYTES,
+  MAX_TOTAL_INFLATED_BYTES,
+  MAX_PDF_PAGES,
   MIN_RESUME_TEXT_LENGTH,
   RESUME_REQUEST_JSON_LIMIT_BYTES,
   SUPPORTED_FILE_HINT,
   ResumeFileError,
+  resumeTooLongError,
+  assertResumeTextWithinLimit,
   resolveResumeFileType,
   sanitizeResumeText,
   assertUsableResumeText,

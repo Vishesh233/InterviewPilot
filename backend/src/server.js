@@ -1,6 +1,10 @@
 require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const connectDB = require('./config/database');
+const { isDbConnected } = require('./config/database');
+const { rateLimiters } = require('./middleware/rateLimiters');
+const { installCrashHandlers, installShutdownHandlers } = require('./config/processLifecycle');
 const authRoutes = require('./routes/authRoutes');
 const interviewPrepRoutes = require('./routes/interviewPrepRoutes');
 const interviewPrepKitsRoutes = require('./routes/interviewPrepKitsRoutes');
@@ -9,9 +13,34 @@ const { RESUME_REQUEST_JSON_LIMIT_BYTES } = require('./services/resumeTextExtrac
 const { describeLlmConfig } = require('./services/geminiClient');
 const { describeJobConfig, getDefaultJobRunner } = require('./services/generationJobService');
 
+// TRUST_PROXY: unset/false = off (default), true = trust every hop, a number =
+// trust that many hops (e.g. 1 behind one proxy such as Render), anything else
+// is passed to Express as-is (e.g. "loopback" or a comma-separated IP list).
+// It decides req.ip, which keys the per-IP rate limits.
+const parseTrustProxy = (raw) => {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value || /^(false|off|no|0)$/i.test(value)) return false;
+  if (/^(true|on|yes)$/i.test(value)) return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+};
+
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 const PORT = process.env.PORT || 5000;
+
+// Declared before the /api rate limit, so platform health checks never count
+// against it. 200 only while MongoDB is connected.
+app.get('/api/health', (req, res) => {
+  if (isDbConnected()) return res.json({ status: 'ok', db: 'up' });
+  return res.status(503).json({ status: 'error', db: 'down' });
+});
+
+// Baseline limit for every other /api route (job polling is exempt; see
+// rateLimiters.js). It runs before body parsing, so a throttled request is
+// rejected without reading its body. Route-specific limits live in the routers.
+app.use('/api', rateLimiters.api);
 
 // The interview-prep route can carry an optional resume file (base64), which needs
 // a larger — still bounded — JSON limit. It parses its own body here, before the
@@ -19,10 +48,6 @@ const PORT = process.env.PORT || 5000;
 // route keeps the existing 256kb limit and all JSON parsing stays strict.
 app.use('/api/interview-prep', express.json({ limit: RESUME_REQUEST_JSON_LIMIT_BYTES, strict: true }));
 app.use(express.json({ limit: '256kb', strict: true }));
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
 
 app.use('/api/auth', authRoutes);
 
@@ -50,6 +75,10 @@ app.use((error, req, res, next) => {
 });
 
 if (require.main === module) {
+  // Log and exit 1 on an uncaught exception or unhandled rejection (see
+  // processLifecycle.js); only installed when this file runs as the server.
+  installCrashHandlers();
+
   // Connect to the database FIRST, then start listening
   const startServer = async () => {
     console.log('LLM configuration:', JSON.stringify(describeLlmConfig()));
@@ -65,9 +94,11 @@ if (require.main === module) {
       console.error('Generation job recovery failed.', JSON.stringify({ name: error?.name || null, code: error?.code ?? null }));
     }
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
+    // SIGTERM/SIGINT: stop accepting requests, close HTTP + MongoDB, exit.
+    installShutdownHandlers(server, { closeDb: () => mongoose.connection.close() });
   };
 
   startServer();

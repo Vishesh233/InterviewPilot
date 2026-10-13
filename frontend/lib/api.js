@@ -16,6 +16,24 @@ export class ApiError extends Error {
   }
 }
 
+const describeWait = (seconds) => {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+};
+
+// 429 from the API rate limits: a friendly message with the wait time, taken
+// from Retry-After (or the body's retryAfterSeconds when a proxy drops it).
+const rateLimitError = (response, payload) => {
+  const header = Number.parseInt(response.headers.get('Retry-After') || '', 10);
+  const fromBody = Number(payload?.error?.retryAfterSeconds);
+  const seconds = Number.isFinite(header) && header > 0 ? header : Number.isFinite(fromBody) && fromBody > 0 ? Math.ceil(fromBody) : null;
+  const message = seconds
+    ? `You're doing that too often. Please wait ${describeWait(seconds)} and try again.`
+    : "You're doing that too often. Please wait a few minutes and try again.";
+  return new ApiError(message, { status: 429, code: 'RATE_LIMITED', details: seconds ? { retryAfterSeconds: seconds } : null });
+};
+
 const readError = async (response) => {
   let payload = null;
   try {
@@ -23,6 +41,7 @@ const readError = async (response) => {
   } catch {
     payload = null;
   }
+  if (response.status === 429) return rateLimitError(response, payload);
   const error = payload?.error;
   if (error && typeof error === 'object') {
     return new ApiError(error.message || 'The request could not be completed.', {

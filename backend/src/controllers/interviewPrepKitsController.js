@@ -4,6 +4,7 @@ const kitBuilderService = require('../services/kitBuilderService');
 const practiceService = require('../services/practiceService');
 const { assertPublicKitUrls } = require('../services/pipelineKitService');
 const { isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
+const { checkCoverage } = require('../services/coverageService');
 
 const KIT_FIELDS = [
   'source',
@@ -31,6 +32,19 @@ const kitFromBody = (body) => {
   return kit;
 };
 
+// Coverage is always computed here, never taken from the client: any
+// client-sent coverage is discarded. Same rule as the generation pipeline —
+// the requirement universe is role.requirements, and resume questions are left
+// out so they can never hide a coverage gap.
+const withServerCoverage = (kit) => ({
+  ...kit,
+  coverage: checkCoverage({
+    requirements: { mustHaveSkills: kitBuilderService.requirementIdsFromKit(kit) },
+    questions: (Array.isArray(kit.questions) ? kit.questions : [])
+      .filter((question) => question?.category !== 'resume'),
+  }),
+});
+
 const unsafeKitBody = (body) => !isPlainSafeObject(body) || hasUnsafeKeys(body);
 
 const validationResponse = (res, result) =>
@@ -53,7 +67,7 @@ const createKit = async (req, res) => {
     if (unsafeKitBody(req.body)) {
       return validationResponse(res, { errors: [{ path: '$', code: 'UNSAFE_BODY' }] });
     }
-    const withMetadata = kitBuilderService.applyKitQuestionMetadata(kitFromBody(req.body));
+    const withMetadata = kitBuilderService.applyKitQuestionMetadata(withServerCoverage(kitFromBody(req.body)));
     const kit = practiceService.applyKitPracticeDefaults(withMetadata);
     const result = validateKitStructure(kit);
     if (!result.valid) {
@@ -118,7 +132,7 @@ const updateKit = async (req, res) => {
     if (unsafeKitBody(req.body)) {
       return validationResponse(res, { errors: [{ path: '$', code: 'UNSAFE_BODY' }] });
     }
-    const kit = kitFromBody(req.body);
+    const kit = withServerCoverage(kitFromBody(req.body));
     const result = validateKitStructure(kit);
     if (!result.valid) {
       return validationResponse(res, result);

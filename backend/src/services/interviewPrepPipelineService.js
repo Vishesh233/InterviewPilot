@@ -13,10 +13,10 @@ const { analyzeResumeMatch } = require('./resumeMatchService');
 const { generateResumeQuestions } = require('./resumeQuestionService');
 const { toResumeMetadata } = require('./resumeInputService');
 // MAX_RESUME_TEXT_LENGTH is the single source of truth for the resume length
-// limit. It is imported (never re-declared) so the pipeline can never enforce a
+// limit. Its guard is imported (never re-declared) so the pipeline can never enforce a
 // different bound than the one resumeTextExtractor/resumeInputService already
 // applied at the API boundary.
-const { MAX_RESUME_TEXT_LENGTH } = require('./resumeTextExtractor');
+const { assertResumeTextWithinLimit } = require('./resumeTextExtractor');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
 const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
@@ -63,9 +63,8 @@ const validateInputs = ({ jobRole, jobDescription, companyUrl, interviewDays, ba
   // MAX_TEXT_LENGTH: that is the generic per-field text cap (20_000) and using it
   // here rejected every resume between 20_001 and MAX_RESUME_TEXT_LENGTH with a
   // bare Error, surfacing as a generic HTTP 500 before the LLM was ever reached.
-  if (resumeText !== undefined && !isBoundedString(resumeText, MAX_RESUME_TEXT_LENGTH)) {
-    throw new Error(`resumeText must be a non-empty string no longer than ${MAX_RESUME_TEXT_LENGTH} characters.`);
-  }
+  // Over-limit text fails with the typed 400 RESUME_TOO_LONG error.
+  if (resumeText !== undefined) assertResumeTextWithinLimit(resumeText);
   try {
     assertSafeUrl(companyUrl, { batchFixtureContext });
   } catch (error) {

@@ -15,6 +15,9 @@ import { Icon } from '@/components/ui/Icon';
 // The backend enforces the same rules again (extension + media type allowlist,
 // 2 MB decoded limit). This client check exists only for fast feedback.
 const RESUME_MAX_BYTES = 2 * 1024 * 1024;
+// Shown to the user; the backend (MAX_RESUME_TEXT_LENGTH) enforces it and
+// answers RESUME_TOO_LONG for longer extracted text.
+const RESUME_MAX_TEXT_CHARS = 40_000;
 const RESUME_EXTENSIONS = ['pdf', 'txt', 'md'];
 
 const resumeExtension = (name) => (String(name || '').split('.').pop() || '').toLowerCase();
@@ -236,7 +239,7 @@ function ResumeField({ resume, error, reading, onSelect, onRemove }) {
         <p className="field-label mb-1">Resume <span className="font-normal text-muted">(optional)</span></p>
         <p className="text-xs leading-5 text-muted">Add a resume to get questions grounded in your real projects and a requirement-by-requirement match.</p>
       </div>
-      <Badge tone="gray">PDF, TXT, MD · max 2 MB</Badge>
+      <Badge tone="gray">PDF, TXT, MD · max 2 MB · up to {RESUME_MAX_TEXT_CHARS.toLocaleString('en-US')} characters of text</Badge>
     </div>
     <div className="mt-4 flex flex-wrap items-center gap-3">
       <label className="button-secondary inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-line bg-white px-5 text-sm font-semibold text-ink transition hover:border-brand-500 hover:text-brand-700">

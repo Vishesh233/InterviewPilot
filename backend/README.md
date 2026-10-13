@@ -36,6 +36,26 @@ Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/
 
 The validated output of every finished stage is stored as a checkpoint on the job, so a resumed job skips finished stages. When a stage fails transiently even after the whole model chain, the job waits (`JOB_RESUME_DELAYS_MS`) with status `retrying` and resumes from its checkpoints, at most twice; permanent and validation failures fail at once. `JOB_CONCURRENCY` caps parallel jobs and `JOB_TIMEOUT_MS` fails a job with `JOB_TIMEOUT`. At startup, unfinished jobs are requeued from their checkpoints, or failed with `JOB_INTERRUPTED` once they were resumed twice. On success the worker saves the kit (or the kit changes) itself. Finished jobs are deleted after 7 days (TTL index). An attached resume's text is kept in memory only, never in the job; a resume kit interrupted by a server restart fails with `RESUME_TEXT_UNAVAILABLE` and must be started again.
 
+## Limits, health and shutdown
+
+- **Resume text:** at most 40,000 characters (`MAX_RESUME_TEXT_LENGTH` in `resumeTextExtractor.js`, the single source of truth). Longer pasted or extracted text is rejected at the API boundary with `400 RESUME_TOO_LONG`, and the pipeline and the resume LLM services use the same limit and error.
+- **Resume PDFs:** 2 MB upload, at most 20 pages (`RESUME_PDF_TOO_MANY_PAGES`), at most 4 MB per decompressed stream and 16 MB decompressed in total (`RESUME_PDF_TOO_LARGE`), at most 128 content streams.
+- **Passwords:** registration requires 8+ characters and at most 72 bytes, because bcrypt ignores anything after 72 bytes (`400 PASSWORD_TOO_SHORT` / `PASSWORD_TOO_LONG`). Login is unchanged, so older accounts keep working.
+- **Coverage:** `POST /api/kits` and `PUT /api/kits/:id` ignore any client-sent `coverage` and recompute it from `role.requirements` and the non-resume questions.
+- **Rate limits** (`express-rate-limit`, in memory per process; all configurable, see `.env.example`). A blocked request gets `429 { error: { code: "RATE_LIMITED", message, retryAfterSeconds } }` plus a `Retry-After` header.
+
+  | Scope | Default | Key | Env vars |
+  | --- | --- | --- | --- |
+  | `POST /api/auth/login`, `POST /api/auth/register` (separate counters) | 10 / 15 min | IP | `RATE_LIMIT_AUTH_MAX`, `RATE_LIMIT_AUTH_WINDOW_MS` |
+  | Creating jobs: `POST /api/interview-prep`, `/api/kits/:id/gaps`, `/api/kits/:id/regenerate` (shared budget; rejected requests do not count) | 15 / hour | user | `RATE_LIMIT_JOB_CREATE_MAX`, `RATE_LIMIT_JOB_CREATE_WINDOW_MS` |
+  | Everything under `/api` (baseline) | 300 / 15 min | IP | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW_MS` |
+  | Job polling `GET /api/jobs/:id` (instead of the baseline) | 1200 / 15 min | user | `RATE_LIMIT_JOB_POLL_MAX`, `RATE_LIMIT_JOB_POLL_WINDOW_MS` |
+
+  Job polling is exempt from the baseline because the UI polls every 2 s (5 s after the first minute): one job alone can reach about 450 requests per 15 minutes. It has its own per-user limit, sized for two jobs polled at full speed. `GET /api/health` is not rate limited.
+- **`TRUST_PROXY`** (default off) sets Express `trust proxy`, which decides the client IP for the per-IP limits. Behind a proxy set it to the number of proxy hops in front of the API (for example `1` on Render). Left off behind a proxy, all clients share one IP and one limit.
+- **Health:** `GET /api/health` returns `200 { status: "ok", db: "up" }` only while MongoDB is connected, otherwise `503 { status: "error", db: "down" }`.
+- **Process:** an uncaught exception or unhandled rejection is logged and the process exits with code 1 (no case is treated as recoverable). On `SIGTERM`/`SIGINT` the server stops accepting connections, finishes in-flight requests, closes MongoDB and exits (forced after 10 s). Running jobs keep their stored status and are resumed by startup recovery. MongoDB connection errors, disconnects and reconnects are logged.
+
 ## Coverage gap questions
 
 `POST /api/kits/:id/gaps` (authenticated, owner-scoped) appends questions for the kit's *currently uncovered* requirements, which are taken from the deterministic coverage check (`coverage.missingRequirements`) — so the UI can show "Generate questions for N gaps" without changing the evaluator schema. It reuses the existing gap-fill LLM stage, preserves deterministic question and flashcard ids, never rewrites existing questions, drops duplicate questions while reporting their ids, and re-validates the complete kit before anything is persisted.

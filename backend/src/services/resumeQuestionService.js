@@ -16,7 +16,8 @@
 const { Type } = require('@google/genai');
 const { generateContent, LlmError } = require('./geminiClient');
 const { validateQuestion, QUESTION_CATEGORIES } = require('./questionSchema');
-const { MAX_TEXT_LENGTH, isBoundedString } = require('./inputValidationService');
+const { isBoundedString } = require('./inputValidationService');
+const { MAX_RESUME_TEXT_LENGTH, assertResumeTextWithinLimit } = require('./resumeTextExtractor');
 const { requirementTextsFrom } = require('./resumeMatchService');
 
 const RESUME_CATEGORY = 'resume';
@@ -34,7 +35,6 @@ const QUESTION_FIELDS = [
 const MAX_PROJECTS = 5;
 const MAX_CANDIDATE_QUESTIONS = 20;
 const RESEARCH_TEXT_LIMIT = 1000;
-const MAX_RESUME_TEXT_FOR_PROMPT = 20_000;
 
 // Generic wording that still refers to a project the resume documents.
 const PROJECT_REFERENCE_PATTERN = /\b(project|projects|application|app|platform|system|codebase|feature|features)\b/i;
@@ -210,9 +210,7 @@ const generateResumeQuestions = async ({
   startIndex = 0,
   client,
 } = {}) => {
-  if (typeof resumeText !== 'string' || !isBoundedString(resumeText, MAX_TEXT_LENGTH)) {
-    throw new Error('resumeText must be a non-empty bounded string.');
-  }
+  assertResumeTextWithinLimit(resumeText);
   const requirementTexts = requirementTextsFrom(requirements);
   if (!client && !process.env.GEMINI_API_KEY) {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
@@ -226,7 +224,7 @@ const generateResumeQuestions = async ({
         requirements,
         requirementTexts,
         research: researchData,
-        resumeText: resumeText.slice(0, MAX_RESUME_TEXT_FOR_PROMPT),
+        resumeText: resumeText.slice(0, MAX_RESUME_TEXT_LENGTH),
       }),
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,

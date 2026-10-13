@@ -6,9 +6,28 @@ const { isPlainSafeObject, hasUnsafeKeys, isBoundedString } = require('../servic
 const SALT_ROUNDS = 10;
 const MAX_EMAIL_LENGTH = 254;
 const MAX_PASSWORD_LENGTH = 1024;
+// New passwords only (login is unchanged so existing accounts keep working).
+// bcrypt ignores everything after the first 72 bytes, so a longer password
+// would silently stop mattering past that point; it is rejected instead.
+const MIN_NEW_PASSWORD_LENGTH = 8;
+const MAX_NEW_PASSWORD_BYTES = 72;
 
 // Simple email format check
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+// Returns { code, message } when a new password breaks the rules, else null.
+const newPasswordProblem = (password) => {
+  if (password.length < MIN_NEW_PASSWORD_LENGTH) {
+    return { code: 'PASSWORD_TOO_SHORT', message: `Password must be at least ${MIN_NEW_PASSWORD_LENGTH} characters.` };
+  }
+  if (Buffer.byteLength(password, 'utf8') > MAX_NEW_PASSWORD_BYTES) {
+    return {
+      code: 'PASSWORD_TOO_LONG',
+      message: `Password must be at most ${MAX_NEW_PASSWORD_BYTES} bytes (72 plain characters; accented letters and emoji use more than one byte).`,
+    };
+  }
+  return null;
+};
 
 // POST /api/auth/register
 const register = async (req, res) => {
@@ -28,6 +47,10 @@ const register = async (req, res) => {
     const normalizedEmail = email.trim().toLowerCase();
     if (!isValidEmail(normalizedEmail)) {
       return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+    const passwordProblem = newPasswordProblem(password);
+    if (passwordProblem) {
+      return res.status(400).json({ error: passwordProblem });
     }
 
     // 3. Check whether the email already exists
@@ -97,4 +120,4 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login };
+module.exports = { register, login, MIN_NEW_PASSWORD_LENGTH, MAX_NEW_PASSWORD_BYTES };

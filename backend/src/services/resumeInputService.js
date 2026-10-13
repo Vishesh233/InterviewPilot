@@ -17,6 +17,7 @@ const {
   MAX_RESUME_FILE_BYTES,
   MAX_RESUME_TEXT_LENGTH,
   ResumeFileError,
+  resumeTooLongError,
   extractResumeText,
   resolveResumeFileType,
   assertUsableResumeText,
@@ -90,13 +91,7 @@ const normalizeResumeText = (value) => {
   if (typeof value !== 'string' || !value.trim()) {
     throw new ResumeInputError('RESUME_INVALID_PAYLOAD', 'resume.text must be a non-empty string.');
   }
-  if (value.length > MAX_RESUME_TEXT_LENGTH) {
-    throw new ResumeInputError(
-      'RESUME_TEXT_TOO_LONG',
-      `The resume text is longer than ${MAX_RESUME_TEXT_LENGTH} characters.`,
-      413
-    );
-  }
+  if (value.length > MAX_RESUME_TEXT_LENGTH) throw asResumeInputError(resumeTooLongError());
   return assertUsableResumeText(sanitizeResumeText(value));
 };
 

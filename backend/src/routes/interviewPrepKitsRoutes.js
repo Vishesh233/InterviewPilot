@@ -1,5 +1,6 @@
 const express = require('express');
 const requireAuth = require('../middleware/authMiddleware');
+const { rateLimiters } = require('../middleware/rateLimiters');
 const {
   createKit,
   listKits,
@@ -33,11 +34,11 @@ router.delete('/api/kits/:id', requireAuth, deleteKit);
 router.patch('/api/kits/:id/questions/reorder', requireAuth, reorderKitQuestions);
 router.patch('/api/kits/:id/questions/:questionId/pin', requireAuth, setKitQuestionPinned);
 router.patch('/api/kits/:id/questions/:questionId', requireAuth, updateKitQuestion);
-router.post('/api/kits/:id/regenerate', requireAuth, regenerateKitSection);
+router.post('/api/kits/:id/regenerate', requireAuth, rateLimiters.jobCreate, regenerateKitSection);
 
 // Coverage gap questions. The literal /gaps path is declared alongside the other
 // literal kit routes, so it can never be parsed as a question id.
-router.post('/api/kits/:id/gaps', requireAuth, generateKitGapQuestions);
+router.post('/api/kits/:id/gaps', requireAuth, rateLimiters.jobCreate, generateKitGapQuestions);
 
 // Practice Mode routes.
 router.get('/api/kits/:id/practice', requireAuth, getKitPractice);

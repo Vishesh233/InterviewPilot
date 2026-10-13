@@ -7,6 +7,25 @@ const { researchCompany } = require('./companyResearchService');
 const { discoverRelevantLinks } = require('./companyLinkDiscoveryService');
 
 const MAX_ADDITIONAL_PAGES = 3;
+
+// Log a skipped best-effort step without page content, query strings or stack
+// traces: only the error name/code and the page's origin + path.
+const logSkippedStep = (step, error, url) => {
+  let page = null;
+  try {
+    if (url) {
+      const parsed = new URL(url);
+      page = `${parsed.origin}${parsed.pathname}`;
+    }
+  } catch (parseError) {
+    page = '<unparseable url>';
+  }
+  console.warn(`Company research: ${step} skipped.`, JSON.stringify({
+    name: error?.name || null,
+    code: typeof error?.code === 'string' ? error.code : null,
+    page,
+  }));
+};
 const RELEVANT_CATEGORIES = ['careers', 'jobs', 'hiring', 'interview'];
 
 // Pick up to `limit` links, taking one from each relevant category per pass so
@@ -42,6 +61,7 @@ const researchCompanyPipeline = async ({ companyUrl, batchFixtureContext } = {},
       .filter((link) => link.url !== homeNormalized); // never repeat the homepage
   } catch (error) {
     // Discovery is best-effort — the homepage source below is already secured.
+    logSkippedStep('link discovery', error, home.companyUrl);
   }
 
   // The homepage is always the first source.
@@ -62,6 +82,7 @@ const researchCompanyPipeline = async ({ companyUrl, batchFixtureContext } = {},
       });
     } catch (error) {
       // Continue with the remaining pages.
+      logSkippedStep('discovered page', error, link.url);
     }
   }
 

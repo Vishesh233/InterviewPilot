@@ -273,14 +273,15 @@ describe('resume text length is bounded by the single MAX_RESUME_TEXT_LENGTH lim
     }
   });
 
-  it('rejects resume text above the intended limit', async () => {
+  it('rejects resume text above the intended limit with the typed 400 RESUME_TOO_LONG error', async () => {
     await assert.rejects(
       () => runWith(MAX_RESUME_TEXT_LENGTH + 1),
       (error) => {
-        assert.equal(error.name, 'Error');
-        assert.equal(error.code, undefined);
-        assert.equal(error.status, undefined);
-        assert.equal(error.message, `resumeText must be a non-empty string no longer than ${MAX_RESUME_TEXT_LENGTH} characters.`);
+        assert.equal(error.name, 'ResumeFileError');
+        assert.equal(error.code, 'RESUME_TOO_LONG');
+        assert.equal(error.status, 400);
+        assert.equal(error.isPublic, true);
+        assert.equal(error.message, 'The resume text is too long. The limit is 40,000 characters.');
         return true;
       }
     );

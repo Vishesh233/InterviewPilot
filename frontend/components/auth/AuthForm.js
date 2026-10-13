@@ -7,6 +7,19 @@ import { AuthShell } from '@/components/layout/AppHeader';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Alert, Button } from '@/components/ui/Primitives';
 
+// Mirrors the backend register rules (authController). bcrypt only reads the
+// first 72 bytes, so longer passwords are rejected rather than truncated.
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_BYTES = 72;
+
+const newPasswordProblem = (password) => {
+  if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`;
+  if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) {
+    return `Keep your password to ${MAX_PASSWORD_BYTES} bytes or fewer (about ${MAX_PASSWORD_BYTES} plain characters; accented letters and emoji count as more).`;
+  }
+  return '';
+};
+
 export function AuthForm({ mode = 'login' }) {
   const router = useRouter();
   const { token, loading, login, register } = useAuth();
@@ -28,6 +41,12 @@ export function AuthForm({ mode = 'login' }) {
       setError('Enter your email and password to continue.');
       return;
     }
+    // Login rules stay unchanged so existing accounts keep working.
+    const passwordProblem = isLogin ? '' : newPasswordProblem(form.password);
+    if (passwordProblem) {
+      setError(passwordProblem);
+      return;
+    }
     setSubmitting(true);
     try {
       if (isLogin) await login({ email: form.email, password: form.password });
@@ -44,7 +63,7 @@ export function AuthForm({ mode = 'login' }) {
     <form className="space-y-5" onSubmit={submit}>
       {error && <Alert>{error}</Alert>}
       <div><label className="field-label" htmlFor="email">Email address</label><input autoComplete="email" className="field-input" id="email" name="email" onChange={update} placeholder="you@example.com" required type="email" value={form.email} /></div>
-      <div><div className="flex items-center justify-between"><label className="field-label" htmlFor="password">Password</label>{isLogin && <span className="mb-2 text-xs text-muted">At least 1 character</span>}</div><input autoComplete={isLogin ? 'current-password' : 'new-password'} className="field-input" id="password" name="password" onChange={update} placeholder="Enter your password" required type="password" value={form.password} /></div>
+      <div><div className="flex items-center justify-between"><label className="field-label" htmlFor="password">Password</label>{!isLogin && <span className="mb-2 text-xs text-muted">8–72 characters</span>}</div><input autoComplete={isLogin ? 'current-password' : 'new-password'} className="field-input" id="password" name="password" onChange={update} placeholder="Enter your password" required type="password" value={form.password} /></div>
       <Button className="w-full" disabled={submitting} type="submit">{submitting ? 'Connecting…' : isLogin ? 'Sign in' : 'Create account'}</Button>
     </form>
     <p className="mt-7 text-center text-sm text-muted">{isLogin ? 'New to the workspace?' : 'Already have an account?'} <Link className="font-semibold text-brand-700 hover:text-brand-600" href={isLogin ? '/register' : '/login'}>{isLogin ? 'Create an account' : 'Sign in'}</Link></p>

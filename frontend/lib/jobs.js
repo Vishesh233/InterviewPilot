@@ -43,6 +43,9 @@ export function jobFailureMessage(error) {
   const code = error?.code || '';
   if (PROVIDER_BUSY_CODES.includes(code)) return 'The AI providers stayed busy even after automatic retries.';
   if (MESSAGES[code]) return MESSAGES[code];
+  if (code === 'RESEARCH_INSUFFICIENT_TEXT' || code === 'RESEARCH_NO_READABLE_TEXT') {
+    return 'The company page was reached, but it had too little readable public information to research. Try a more detailed page, such as the About or Careers page.';
+  }
   if (code.startsWith('RESEARCH_')) return 'We could not read the company website.';
   return error?.message || 'The generation could not be completed.';
 }

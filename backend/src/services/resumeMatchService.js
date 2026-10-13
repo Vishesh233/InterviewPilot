@@ -18,7 +18,8 @@
 
 const { Type } = require('@google/genai');
 const { generateContent, LlmError } = require('./geminiClient');
-const { MAX_TEXT_LENGTH, isBoundedString } = require('./inputValidationService');
+const { isBoundedString } = require('./inputValidationService');
+const { MAX_RESUME_TEXT_LENGTH, assertResumeTextWithinLimit } = require('./resumeTextExtractor');
 
 const MATCH_STATUSES = ['matched', 'partial', 'missing'];
 // Role and seniority are deliberately excluded: a job title is not a
@@ -31,7 +32,6 @@ const REQUIREMENT_LIST_FIELDS = [
   'interviewSignals',
 ];
 const MAX_EVIDENCE_LENGTH = 300;
-const MAX_RESUME_TEXT_FOR_PROMPT = 20_000;
 const MIN_EVIDENCE_TOKEN_OVERLAP = 0.5;
 
 // Words that carry no grounding value, so a lucky common word can never make
@@ -167,9 +167,7 @@ RULES:
  * Returns { matches, matchedRequirements, partialRequirements, missingRequirements, matchPercent }.
  */
 const analyzeResumeMatch = async ({ resumeText, requirements, client } = {}) => {
-  if (typeof resumeText !== 'string' || !isBoundedString(resumeText, MAX_TEXT_LENGTH)) {
-    throw new Error('resumeText must be a non-empty bounded string.');
-  }
+  assertResumeTextWithinLimit(resumeText);
   const requirementTexts = requirementTextsFrom(requirements);
   if (requirementTexts.length === 0) {
     return {
@@ -191,7 +189,7 @@ const analyzeResumeMatch = async ({ resumeText, requirements, client } = {}) => 
       contents: buildPrompt({
         requirements,
         requirementTexts,
-        resumeText: resumeText.slice(0, MAX_RESUME_TEXT_FOR_PROMPT),
+        resumeText: resumeText.slice(0, MAX_RESUME_TEXT_LENGTH),
       }),
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
