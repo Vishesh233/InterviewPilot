@@ -2,7 +2,7 @@ import './globals.css';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 
 export const metadata = {
-  title: 'InterviewPilot | Trao',
+  title: 'InterviewPilot',
   description: 'AI-powered interview preparation, tailored to the role you\'re applying for.',
 };
 

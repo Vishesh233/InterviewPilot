@@ -68,7 +68,7 @@ export async function apiRequest(path, { token, body, timeoutMs = DEFAULT_REQUES
   }
 
   if (response.status === 401 && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('trao:unauthorized'));
+    window.dispatchEvent(new CustomEvent('interviewpilot:unauthorized'));
   }
   if (!response.ok) throw await readError(response);
   if (response.status === 204) return null;

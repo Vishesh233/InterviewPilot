@@ -5,7 +5,7 @@ const builder = require('../src/services/kitBuilderService');
 const { regenerateKitSection } = require('../src/services/kitRegenerationService');
 const { validateKitStructure } = require('../src/services/kitStructureValidator');
 
-// A complete, valid Appendix A kit with builder state:
+// A complete, valid kit with builder state:
 // q1/q2 are generated technical questions, q3 is pinned, q4 was edited by the user.
 const buildKit = () => ({
   source: {
@@ -196,7 +196,7 @@ describe('kit builder metadata', () => {
     );
   });
 
-  it('writes back only the Appendix A sections', () => {
+  it('writes back only the kit schema sections', () => {
     const picked = builder.pickKitSections({ ...buildKit(), _id: 'kit-1', userId: 'user-A', __v: 3 });
     assert.deepEqual(Object.keys(picked).sort(), [
       'company_brief',

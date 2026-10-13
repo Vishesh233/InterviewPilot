@@ -13,7 +13,7 @@ const { hasUnsafeKeys, isSafeIdentifier } = require('./inputValidationService');
 // any user edit flips status to "edited"; pinning only flips the pinned flag.
 const QUESTION_STATUS = { GENERATED: 'generated', EDITED: 'edited' };
 
-// Appendix A-compatible kit sections (mirrors KIT_FIELDS in the CRUD controller).
+// Schema-compatible kit sections (mirrors KIT_FIELDS in the CRUD controller).
 // `resume` and `resume_analysis` are optional, additive sections: they are carried
 // through every builder/practice write so a resume-enabled kit never loses them.
 const KIT_SECTIONS = [
@@ -102,7 +102,7 @@ const toPlainKit = (kit) => {
 // Response/intermediate form: plain kit object with defaulted question metadata.
 const withBuilderMetadata = (kit) => applyKitQuestionMetadata(toPlainKit(kit));
 
-// Only the Appendix A sections are ever written back to Mongo ($set), so
+// Only the kit schema sections are ever written back to Mongo ($set), so
 // _id/userId/__v/createdAt can never be part of an update payload.
 const pickKitSections = (kit) => {
   const picked = {};

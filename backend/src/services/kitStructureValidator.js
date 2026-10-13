@@ -1,4 +1,4 @@
-// Kit Structure Validator — assignment Appendix A.
+// Kit Structure Validator — the interview prep kit schema.
 // Deterministic, LLM-independent service. Never throws for validation failures:
 // always returns { valid, errors: [{ path, message, code }] }.
 

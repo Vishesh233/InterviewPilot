@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 
-const TOKEN_KEY = 'trao_interview_token';
-const USER_KEY = 'trao_interview_user';
+const TOKEN_KEY = 'interviewpilot_token';
+const USER_KEY = 'interviewpilot_user';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -32,8 +32,8 @@ export function AuthProvider({ children }) {
       setToken(null);
       setUser(null);
     };
-    window.addEventListener('trao:unauthorized', handleUnauthorized);
-    return () => window.removeEventListener('trao:unauthorized', handleUnauthorized);
+    window.addEventListener('interviewpilot:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('interviewpilot:unauthorized', handleUnauthorized);
   }, []);
 
   const saveSession = (nextToken, nextUser) => {

@@ -1,5 +1,5 @@
 {
-  "name": "backend",
+  "name": "interviewpilot-backend",
   "version": "1.0.0",
   "description": "InterviewPilot backend: Express API that turns job descriptions into interview prep kits using Gemini",
   "scripts": {

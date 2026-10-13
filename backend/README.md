@@ -46,7 +46,7 @@ The validated output of every finished stage is stored as a checkpoint on the jo
 
 ## Batch evaluation CLI
 
-Run the mandatory batch evaluator from this directory:
+Run the batch evaluator from this directory:
 
 ```bash
 npm run evaluate -- --input cases.json --output kits.json
@@ -63,7 +63,7 @@ The input file is a UTF-8 JSON array. Each case must use exactly these fields:
 }
 ```
 
-`id` is a required, stable, unique non-empty string. `jd` must be a non-empty string, `company_url` must be a supported HTTP(S) URL or evaluator-local fixture, and `days` must be an integer from 1 through 60. The evaluator maps these Appendix B fields to the production pipeline's internal `jobDescription`, `companyUrl`, and `interviewDays` names.
+`id` is a required, stable, unique non-empty string. `jd` must be a non-empty string, `company_url` must be a supported HTTP(S) URL or evaluator-local fixture, and `days` must be an integer from 1 through 60. The evaluator maps these batch case fields to the production pipeline's internal `jobDescription`, `companyUrl`, and `interviewDays` names.
 
 The evaluator processes cases sequentially, preserves input order, and calls the same `generateInterviewPrepKit` pipeline as the web API. It does not connect to MongoDB. Every successful kit is checked with the existing `kitStructureValidator` before it is written. Partial company research remains successful when the pipeline can still produce a valid kit.
 

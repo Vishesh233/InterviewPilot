@@ -39,7 +39,7 @@ const buildValidKit = () => ({
 });
 
 describe('validateKitStructure', () => {
-  it('accepts a valid Appendix A kit', () => {
+  it('accepts a valid kit', () => {
     const result = validateKitStructure(buildValidKit());
     assert.equal(result.valid, true);
     assert.deepEqual(result.errors, []);

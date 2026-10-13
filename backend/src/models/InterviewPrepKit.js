@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// Stores the complete Appendix A kit for the owning user.
+// Stores the complete kit for the owning user.
 // Each top-level section is Mixed so the validator remains the source of truth
 // for shape; Mongoose only enforces presence + ownership here.
 const interviewPrepKitSchema = new mongoose.Schema(

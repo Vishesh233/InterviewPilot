@@ -66,7 +66,7 @@ const gapFixture = () => buildKit({
   coverage: { coveragePercent: 20, coveredRequirements: ['Node.js'], missingRequirements: ['AWS', 'Backend Engineer', 'junior', 'MongoDB'] },
 });
 
-// A complete, Appendix A-valid question (the gap stage rejects anything less).
+// A complete, schema-valid question (the gap stage rejects anything less).
 const gapQuestion = (overrides = {}) => ({
   question: 'What would you deploy to AWS for this workload?',
   category: 'technical',

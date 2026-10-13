@@ -875,7 +875,7 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
 
 
 
-describe('pipeline assignment edge cases', () => {
+describe('pipeline edge cases', () => {
   const requirements = {
     role: 'Backend Engineer',
     seniority: 'junior',

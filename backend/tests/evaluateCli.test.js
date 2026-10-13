@@ -131,8 +131,8 @@ const successfulPipelineDeps = (overrides = {}) => ({
   ...overrides,
 });
 
-describe('Appendix B evaluator contract', () => {
-  it('keeps the mandatory command and documents the exact input fields', () => {
+describe('batch evaluator contract', () => {
+  it('keeps the evaluate command and documents the exact input fields', () => {
     const options = evaluator.parseCliArgs(['--input', 'C:\\cases\\cases.json', '--output', 'D:\\kits.json']);
     assert.equal(options.input, 'C:\\cases\\cases.json');
     assert.equal(options.output, 'D:\\kits.json');
@@ -140,7 +140,7 @@ describe('Appendix B evaluator contract', () => {
     for (const field of ['id', 'jd', 'company_url', 'days']) assert.match(evaluator.HELP, new RegExp(`\\b${field}\\b`));
   });
 
-  it('maps Appendix B fields to the production pipeline names and returns an exact success result', async () => {
+  it('maps batch case fields to the production pipeline names and returns an exact success result', async () => {
     const calls = [];
     const report = await evaluator.runBatchEvaluation([validCase()], {
       generateInterviewPrepKit: async (input) => {

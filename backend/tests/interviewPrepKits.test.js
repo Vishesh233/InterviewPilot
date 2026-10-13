@@ -294,7 +294,7 @@ describe('interview prep kits CRUD and ownership', () => {
 describe('interview prep kit model schema', () => {
   const schema = InterviewPrepKit.schema;
 
-  it('requires every Appendix A section on the stored document', () => {
+  it('requires every kit schema section on the stored document', () => {
     for (const field of [
       'source',
       'company_brief',

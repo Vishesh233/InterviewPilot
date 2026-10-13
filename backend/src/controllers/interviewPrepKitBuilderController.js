@@ -66,7 +66,7 @@ const loadOwnedKit = async (req) => {
   return kit;
 };
 
-// Write back only the Appendix A sections, so _id/userId/timestamps are untouched.
+// Write back only the kit schema sections, so _id/userId/timestamps are untouched.
 const persistKit = async (req, kit) => {
   const updated = await InterviewPrepKit.findOneAndUpdate(
     { _id: req.params.id, userId: req.userId },

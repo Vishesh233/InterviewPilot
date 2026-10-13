@@ -23,4 +23,4 @@ The frontend only uses this public URL; it never contains backend API keys, prov
 - `/kits/[id]`
 - `/kits/[id]/practice`
 
-The app stores the short-lived backend JWT in browser storage for this assignment. Clear it with the Logout action or browser storage removal.
+The app stores the short-lived backend JWT in browser storage. Clear it with the Logout action or browser storage removal.

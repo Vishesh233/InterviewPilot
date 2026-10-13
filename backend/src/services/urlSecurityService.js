@@ -274,7 +274,7 @@ const requestOnce = async (url, options = {}) => {
       // while the custom lookup callback pins the connection to `selected`.
       headers: {
         Host: parsed.host,
-        'User-Agent': 'Trao-Interview-Prep-Backend/1.0 (company research)',
+        'User-Agent': 'InterviewPilot/1.0 (+https://github.com/Vishesh233/InterviewPilot)',
         Accept: 'text/html,application/xhtml+xml',
         'Accept-Encoding': 'identity',
       },

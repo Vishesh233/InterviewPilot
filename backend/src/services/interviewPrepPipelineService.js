@@ -211,7 +211,7 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
 /**
  * Build the full interview-prep kit while preserving the established API response.
  * `buildFinalKit` adapts the untouched stage outputs for consumers that require
- * the existing Appendix A validator shape.
+ * the existing kit validator shape.
  *
  * `context` is optional ({ onStage, checkpoints, saveCheckpoint }, see
  * stageCheckpoint.js). Without it every stage runs, exactly as before.
