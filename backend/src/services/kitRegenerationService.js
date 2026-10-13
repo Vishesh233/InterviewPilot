@@ -12,6 +12,7 @@ const { checkCoverage } = require('./coverageService');
 const { generateQuestions } = require('./questionGenerationService');
 const { fillCoverageGaps } = require('./gapFillService');
 const builder = require('./kitBuilderService');
+const { runCheckpointedStage } = require('./stageCheckpoint');
 
 const { KitBuilderError, QUESTION_STATUS } = builder;
 
@@ -53,19 +54,20 @@ const selectSection = (questions, category) => {
   };
 };
 
-/**
- * Regenerate the generated, unpinned questions of one section/category.
- * Returns { kit, summary } where `kit` has already passed kitStructureValidator.
- * Throws KitBuilderError (with a machine-readable code) when the stored kit must
- * not be touched.
- *
- * `deps.generateQuestions` / `deps.fillCoverageGaps` are injectable so tests can
- * exercise the algorithm without calling the LLM.
- */
-const regenerateKitSection = async ({ kit, category, deps = {} } = {}) => {
-  const generate = typeof deps.generateQuestions === 'function' ? deps.generateQuestions : generateQuestions;
-  const gapFill = typeof deps.fillCoverageGaps === 'function' ? deps.fillCoverageGaps : fillCoverageGaps;
+// Checkpoint keys of a background regenerate job.
+const REGENERATION_STAGES = Object.freeze({
+  GENERATION: 'Question generation',
+  GAP_FILL: 'Coverage gap filling',
+});
 
+const hasQuestionList = (value) => builder.isPlainObject(value) && Array.isArray(value.questions);
+
+/**
+ * Every check that can reject a regeneration before the LLM is called. The
+ * HTTP layer runs it synchronously so bad input is answered immediately; the
+ * background job runs it again on the then-current kit.
+ */
+const prepareRegeneration = ({ kit, category } = {}) => {
   const section = typeof category === 'string' ? category.trim() : '';
   if (!section) {
     throw new KitBuilderError('BUILDER_INVALID_SECTION', 'category must be a non-empty question category.', {
@@ -115,22 +117,45 @@ const regenerateKitSection = async ({ kit, category, deps = {} } = {}) => {
   }
 
   const research = builder.builderResearchFrom(storedKit);
+  return { section, storedKit, questions, sectionQuestions, replaceable, preserved, requirements, research };
+};
+
+/**
+ * Regenerate the generated, unpinned questions of one section/category.
+ * Returns { kit, summary } where `kit` has already passed kitStructureValidator.
+ * Throws KitBuilderError (with a machine-readable code) when the stored kit must
+ * not be touched.
+ *
+ * `deps.generateQuestions` / `deps.fillCoverageGaps` are injectable so tests can
+ * exercise the algorithm without calling the LLM. `context` is the optional
+ * background-job checkpoint context (see stageCheckpoint.js).
+ */
+const regenerateKitSection = async ({ kit, category, deps = {}, context } = {}) => {
+  const generate = typeof deps.generateQuestions === 'function' ? deps.generateQuestions : generateQuestions;
+  const gapFill = typeof deps.fillCoverageGaps === 'function' ? deps.fillCoverageGaps : fillCoverageGaps;
+
+  const { section, storedKit, questions, sectionQuestions, replaceable, requirements, research } =
+    prepareRegeneration({ kit, category });
   const allowedUrls = new Set(research.sources.map((source) => source.url));
   const requirementIds = new Set(requirements.mustHaveSkills);
 
-  let generated;
-  try {
-    generated = await generate({ requirements, research });
-  } catch (error) {
-    const detail = error?.isPublic && typeof error.message === 'string'
-      ? error.message
-      : 'The model provider could not complete the request.';
-    throw new KitBuilderError(
-      'KIT_REGENERATION_GENERATION_FAILED',
-      `Question generation failed: ${detail}`,
-      { status: error?.status === 429 ? 429 : 500 }
-    );
-  }
+  const generated = await runCheckpointedStage(context, REGENERATION_STAGES.GENERATION, {
+    isValid: hasQuestionList,
+    run: async () => {
+      try {
+        return await generate({ requirements, research });
+      } catch (error) {
+        const detail = error?.isPublic && typeof error.message === 'string'
+          ? error.message
+          : 'The model provider could not complete the request.';
+        throw new KitBuilderError(
+          'KIT_REGENERATION_GENERATION_FAILED',
+          `Question generation failed: ${detail}`,
+          { status: error?.status === 429 ? 429 : 500, causeCode: error?.code }
+        );
+      }
+    },
+  });
 
   const candidates = Array.isArray(generated?.questions) ? generated.questions : [];
   const replacements = [];
@@ -180,19 +205,23 @@ const regenerateKitSection = async ({ kit, category, deps = {} } = {}) => {
   const baseCoverage = checkCoverage({ requirements, questions: nextQuestions });
   let finalQuestions = nextQuestions;
   if (baseCoverage.missingRequirements.length > 0) {
-    let filled;
-    try {
-      filled = await gapFill({ requirements, research, questions: nextQuestions, coverage: baseCoverage });
-    } catch (error) {
-      const detail = error?.isPublic && typeof error.message === 'string'
-        ? error.message
-        : 'The model provider could not complete the request.';
-      throw new KitBuilderError(
-        'KIT_REGENERATION_GAP_FILL_FAILED',
-        `Coverage gap filling failed: ${detail}`,
-        { status: error?.status === 429 ? 429 : 500 }
-      );
-    }
+    const filled = await runCheckpointedStage(context, REGENERATION_STAGES.GAP_FILL, {
+      isValid: (value) => hasQuestionList(value) && value.questions.length >= nextQuestions.length,
+      run: async () => {
+        try {
+          return await gapFill({ requirements, research, questions: nextQuestions, coverage: baseCoverage });
+        } catch (error) {
+          const detail = error?.isPublic && typeof error.message === 'string'
+            ? error.message
+            : 'The model provider could not complete the request.';
+          throw new KitBuilderError(
+            'KIT_REGENERATION_GAP_FILL_FAILED',
+            `Coverage gap filling failed: ${detail}`,
+            { status: error?.status === 429 ? 429 : 500, causeCode: error?.code }
+          );
+        }
+      },
+    });
     const filledQuestions = Array.isArray(filled?.questions) ? filled.questions : nextQuestions;
     finalQuestions = builder.dedupeAppendedQuestionIds(filledQuestions, nextQuestions.length);
   }
@@ -230,5 +259,5 @@ const regenerateKitSection = async ({ kit, category, deps = {} } = {}) => {
   };
 };
 
-module.exports = { regenerateKitSection };
+module.exports = { regenerateKitSection, prepareRegeneration, REGENERATION_STAGES };
 

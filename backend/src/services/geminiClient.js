@@ -1,3 +1,4 @@
+const { AsyncLocalStorage } = require('node:async_hooks');
 const OpenAI = require('openai');
 const { GoogleGenAI } = require('@google/genai');
 
@@ -230,18 +231,36 @@ const backoffDelayMs = ({ attempt, baseMs, retryAfterMs }) => {
 
 const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
+// Optional per-job event sink. A background job runs its pipeline inside
+// llmTelemetry.run({ onEvent }), and every attempt / fallback / cooldown event
+// below is also handed to that sink so it can be stored on the job. Outside a
+// job there is no store and only the log lines are written.
+const llmTelemetry = new AsyncLocalStorage();
+
+const emitLlmEvent = (event) => {
+  const sink = llmTelemetry.getStore();
+  if (!sink || typeof sink.onEvent !== 'function') return;
+  try {
+    sink.onEvent({ ...event, at: new Date().toISOString() });
+  } catch (error) {
+    console.error('LLM telemetry sink failed.', JSON.stringify({ name: error?.name || null, message: String(error?.message || '').slice(0, 200) }));
+  }
+};
+
 // In-memory cooldown per chain entry. It is process local by design: it only
 // steers this process away from a model that is currently answering 503/504/499.
 const cooldowns = new Map();
 const entryKey = (entry) => `${entry.provider}:${entry.model}`;
 
 const logCooldown = (entry, event, details = {}) => {
-  console.warn('LLM model cooldown.', JSON.stringify({
+  const line = {
     provider: entry.provider,
     model: entry.model,
     event,
     ...details,
-  }));
+  };
+  console.warn('LLM model cooldown.', JSON.stringify(line));
+  emitLlmEvent({ type: 'cooldown', ...line });
 };
 
 const enterCooldown = (entry, cooldownMs, status) => {
@@ -564,6 +583,7 @@ const logAttempt = ({ entry, stage, attempt, rawError, safeError, classification
   };
   if (rawError) console.warn('LLM attempt failed.', JSON.stringify(line));
   else console.info('LLM attempt succeeded.', JSON.stringify(line));
+  emitLlmEvent({ type: rawError ? 'attempt_failed' : 'attempt_succeeded', ...line });
 };
 
 const callGemini = async (entry, input) => {
@@ -672,20 +692,20 @@ const generateContent = async (input = {}) => {
 
     if (isInCooldown(entry)) {
       if (!isLastModel) {
-        console.warn('LLM model skipped.', JSON.stringify({
+        const skipped = {
           provider: entry.provider,
           model: entry.model,
           stage: input.stage || null,
           classification: 'cooldown',
           action: 'cooldown-skip',
-        }));
+        };
+        console.warn('LLM model skipped.', JSON.stringify(skipped));
+        emitLlmEvent({ type: 'model_skipped', ...skipped });
         continue;
       }
-      console.warn('LLM model cooldown ignored: last model in the chain.', JSON.stringify({
-        provider: entry.provider,
-        model: entry.model,
-        stage: input.stage || null,
-      }));
+      const ignored = { provider: entry.provider, model: entry.model, stage: input.stage || null };
+      console.warn('LLM model cooldown ignored: last model in the chain.', JSON.stringify(ignored));
+      emitLlmEvent({ type: 'cooldown_ignored', ...ignored });
     }
 
     for (let attempt = 1; ; attempt += 1) {
@@ -730,18 +750,22 @@ const generateContent = async (input = {}) => {
         }
         if (action === 'fallback') {
           if (classification === 'thinking_rejected') {
-            console.warn('LLM thinking setting rejected by fallback model; skipping it.', JSON.stringify({
+            const rejected = {
               model: entry.model,
               setting: `${entry.thinkingSource}=${entry.thinkingSetting}`,
               stage: input.stage || null,
-            }));
+            };
+            console.warn('LLM thinking setting rejected by fallback model; skipping it.', JSON.stringify(rejected));
+            emitLlmEvent({ type: 'thinking_rejected', ...rejected });
           }
-          console.warn('LLM fallback.', JSON.stringify({
+          const fallback = {
             from: `${entry.provider}:${entry.model}`,
             to: `${chain[index + 1].provider}:${chain[index + 1].model}`,
             reason: classification,
             stage: input.stage || null,
-          }));
+          };
+          console.warn('LLM fallback.', JSON.stringify(fallback));
+          emitLlmEvent({ type: 'fallback', ...fallback });
           break;
         }
         throw safeError;
@@ -823,5 +847,7 @@ module.exports = {
   parseGeminiThinking,
   parseGeminiThinkingOverrides,
   resetLlmCooldowns,
+  llmTelemetry,
+  TRANSIENT_LLM_CODES,
   GEMINI_THINKING_LEVELS,
 };

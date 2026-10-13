@@ -176,18 +176,21 @@ describe('resume request normalization', () => {
     companyUrl: 'https://example.com/',
     interviewDays: 5,
   };
-  const emptyResult = () => ({ requirements: {}, research: {}, questions: [], coverage: {}, schedule: {} });
+  // Valid input starts a background kit job; the fake runner records the job spec.
+  const fakeRunner = () => {
+    const specs = [];
+    return { specs, createJob: async (spec) => { specs.push(spec); return { id: 'job-1' }; } };
+  };
 
   it('treats a missing resume exactly like the existing JD-only request', async () => {
     assert.equal(normalizeResumeInput(undefined), null);
     assert.equal(normalizeResumeInput(null), null);
-    let received;
+    const runner = fakeRunner();
     const res = mockResponse();
-    await generateInterviewPrep({ body: baseBody }, res, {
-      generateInterviewPrepKit: async (input) => { received = input; return emptyResult(); },
-    });
-    assert.equal(res.statusCode, 200);
-    assert.equal('resume' in received, false, 'the JD-only request must not send a resume key');
+    await generateInterviewPrep({ body: baseBody }, res, { jobRunner: runner });
+    assert.equal(res.statusCode, 202);
+    assert.equal(runner.specs[0].input.hasResume, false);
+    assert.equal('memoryInput' in runner.specs[0], false, 'the JD-only request must not carry a resume');
   });
 
   it('accepts pasted text and a validated base64 upload', () => {
@@ -221,35 +224,28 @@ describe('resume request normalization', () => {
 
   it('maps resume validation failures to safe structured API responses', async () => {
     const res = mockResponse();
-    let called = false;
+    const runner = fakeRunner();
     await generateInterviewPrep(
       { body: { ...baseBody, resume: { fileName: 'resume.docx', dataBase64: Buffer.from('x').toString('base64') } } },
       res,
-      { generateInterviewPrepKit: async () => { called = true; return emptyResult(); } }
+      { jobRunner: runner }
     );
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.error.code, 'RESUME_UNSUPPORTED_FILE_TYPE');
     assert.equal(JSON.stringify(res.body).includes('LibVerse'), false);
-    assert.equal(called, false, 'the pipeline must not run for an invalid resume');
+    assert.equal(runner.specs.length, 0, 'no job may start for an invalid resume');
   });
 
-  it('passes a normalized resume to the pipeline and keeps it out of the response', async () => {
+  it('hands the normalized resume to the job in memory only, never in the stored input or the response', async () => {
     const res = mockResponse();
-    let received;
-    await generateInterviewPrep(
-      { body: { ...baseBody, resume: { text: RESUME_TEXT } } },
-      res,
-      {
-        generateInterviewPrepKit: async (input) => {
-          received = input;
-          return { ...emptyResult(), resume: { provided: true, fileType: 'text', charCount: input.resume.text.length } };
-        },
-      }
-    );
-    assert.equal(res.statusCode, 200);
-    assert.ok(received.resume.text.includes('LibVerse'));
+    const runner = fakeRunner();
+    await generateInterviewPrep({ body: { ...baseBody, resume: { text: RESUME_TEXT } } }, res, { jobRunner: runner });
+    assert.equal(res.statusCode, 202);
+    const [spec] = runner.specs;
+    assert.ok(spec.memoryInput.resume.text.includes('LibVerse'));
+    assert.equal(spec.input.hasResume, true);
+    assert.equal(JSON.stringify(spec.input).includes('LibVerse'), false, 'the persisted job input must not hold resume text');
     assert.equal(JSON.stringify(res.body).includes('LibVerse'), false, 'raw resume text must not be returned');
-    assert.equal(res.body.resume.provided, true);
   });
 });
 

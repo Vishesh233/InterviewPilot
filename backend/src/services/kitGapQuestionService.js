@@ -13,6 +13,7 @@ const { fillCoverageGaps } = require('./gapFillService');
 const { validateKitStructure } = require('./kitStructureValidator');
 const { normalizeQuestionText } = require('./questionQualityService');
 const builder = require('./kitBuilderService');
+const { runCheckpointedStage } = require('./stageCheckpoint');
 
 const { KitBuilderError, QUESTION_STATUS } = builder;
 
@@ -48,17 +49,15 @@ const flashcardFor = (question, id) => ({
   questionIds: [question.id],
 });
 
-/**
- * Append validated questions for the kit's uncovered requirements.
- * Returns { kit, summary } where `kit` already passed kitStructureValidator.
- * Throws KitBuilderError (machine-readable code) when nothing may be written.
- *
- * `deps.fillCoverageGaps` is injectable so tests can exercise the algorithm without
- * calling the LLM.
- */
-const generateGapQuestions = async ({ kit, deps = {} } = {}) => {
-  const gapFill = typeof deps.fillCoverageGaps === 'function' ? deps.fillCoverageGaps : fillCoverageGaps;
+// Checkpoint key of a background gap-questions job.
+const GAP_QUESTION_STAGE = 'Coverage gap filling';
 
+/**
+ * Every check that can reject a gap-question request before the LLM is called.
+ * The HTTP layer runs it synchronously so a kit without gaps is answered
+ * immediately; the background job runs it again on the then-current kit.
+ */
+const prepareGapQuestions = ({ kit } = {}) => {
   const storedKit = builder.applyKitQuestionMetadata(builder.toPlainKit(kit));
   const questions = builder.requireKitQuestions(storedKit);
   const requirements = builder.builderRequirementsFrom(storedKit);
@@ -81,18 +80,39 @@ const generateGapQuestions = async ({ kit, deps = {} } = {}) => {
     );
   }
 
+  return { storedKit, questions, requirements, coverage, gaps };
+};
+
+/**
+ * Append validated questions for the kit's uncovered requirements.
+ * Returns { kit, summary } where `kit` already passed kitStructureValidator.
+ * Throws KitBuilderError (machine-readable code) when nothing may be written.
+ *
+ * `deps.fillCoverageGaps` is injectable so tests can exercise the algorithm without
+ * calling the LLM. `context` is the optional background-job checkpoint context
+ * (see stageCheckpoint.js).
+ */
+const generateGapQuestions = async ({ kit, deps = {}, context } = {}) => {
+  const gapFill = typeof deps.fillCoverageGaps === 'function' ? deps.fillCoverageGaps : fillCoverageGaps;
+
+  const { storedKit, questions, requirements, coverage, gaps } = prepareGapQuestions({ kit });
   const research = builder.builderResearchFrom(storedKit);
-  let filled;
-  try {
-    filled = await gapFill({ requirements, research, questions, coverage });
-  } catch (error) {
-    const detail = error?.isPublic && typeof error.message === 'string'
-      ? error.message
-      : 'The model provider could not complete the request.';
-    throw new KitBuilderError('KIT_GAP_GENERATION_FAILED', `Gap question generation failed: ${detail}`, {
-      status: error?.status === 429 ? 429 : 500,
-    });
-  }
+  const filled = await runCheckpointedStage(context, GAP_QUESTION_STAGE, {
+    isValid: (value) => builder.isPlainObject(value) && Array.isArray(value.questions) && value.questions.length >= questions.length,
+    run: async () => {
+      try {
+        return await gapFill({ requirements, research, questions, coverage });
+      } catch (error) {
+        const detail = error?.isPublic && typeof error.message === 'string'
+          ? error.message
+          : 'The model provider could not complete the request.';
+        throw new KitBuilderError('KIT_GAP_GENERATION_FAILED', `Gap question generation failed: ${detail}`, {
+          status: error?.status === 429 ? 429 : 500,
+          causeCode: error?.code,
+        });
+      }
+    },
+  });
 
   const generated = Array.isArray(filled?.questions) ? filled.questions.slice(questions.length) : [];
   // Duplicate guard for the APPENDED questions only: a new question whose text is
@@ -171,4 +191,4 @@ const generateGapQuestions = async ({ kit, deps = {} } = {}) => {
   };
 };
 
-module.exports = { generateGapQuestions };
+module.exports = { generateGapQuestions, prepareGapQuestions, GAP_QUESTION_STAGE };

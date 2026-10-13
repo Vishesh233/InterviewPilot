@@ -12,6 +12,7 @@ const kitRegenerationService = require('../services/kitRegenerationService');
 const kitGapQuestionService = require('../services/kitGapQuestionService');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const { hasUnsafeKeys } = require('../services/inputValidationService');
+const { startJob, runnerFrom } = require('./generationJobsController');
 
 const { KitBuilderError } = kitBuilderService;
 
@@ -127,58 +128,41 @@ const setKitQuestionPinned = (req, res) =>
   });
 
 // POST /api/kits/:id/regenerate — replace only generated, unpinned section questions.
-const regenerateKitSection = async (req, res) => {
+// Every pre-LLM check runs synchronously (400/404/409/422 immediately); the
+// regeneration itself runs as a background job: 202 { jobId }.
+const regenerateKitSection = async (req, res, deps) => {
+  let category;
   try {
     const body = bodyOf(req);
     const kit = kitBuilderService.withBuilderMetadata(await loadOwnedKit(req));
-    const { kit: regenerated, summary } = await kitRegenerationService.regenerateKitSection({
-      kit,
-      category: body.category !== undefined ? body.category : body.section,
-    });
-
-    // The service already validated the result; re-check before the write so an
-    // invalid regeneration can never be persisted.
-    const validation = validateKitStructure(regenerated);
-    if (!validation.valid) {
-      return res.status(500).json({
-        error: {
-          code: 'KIT_REGENERATION_VALIDATION_FAILED',
-          message: 'The regenerated kit failed structure validation and was not saved.',
-          details: validation.errors.map(({ path, code }) => ({ path, code })),
-        },
-      });
-    }
-
-    const updated = await persistKit(req, regenerated);
-    return res.json({ kit: kitBuilderService.withBuilderMetadata(updated), regeneration: summary });
+    category = body.category !== undefined ? body.category : body.section;
+    ({ section: category } = kitRegenerationService.prepareRegeneration({ kit, category }));
   } catch (error) {
     return respondWithBuilderError(res, error);
   }
+  return startJob(res, runnerFrom(deps), {
+    userId: req.userId,
+    type: 'regenerate',
+    kitId: req.params.id,
+    input: { category },
+  });
 };
 
-const generateKitGapQuestions = async (req, res) => {
+// POST /api/kits/:id/gaps — generate questions for the uncovered requirements.
+// A kit without gaps is answered synchronously (409); otherwise 202 { jobId }.
+const generateKitGapQuestions = async (req, res, deps) => {
   try {
     const kit = kitBuilderService.withBuilderMetadata(await loadOwnedKit(req));
-    const { kit: filled, summary } = await kitGapQuestionService.generateGapQuestions({ kit });
-
-    // The service already validated the result; re-check before the write so an
-    // invalid gap fill can never be persisted.
-    const validation = validateKitStructure(filled);
-    if (!validation.valid) {
-      return res.status(500).json({
-        error: {
-          code: 'KIT_GAP_VALIDATION_FAILED',
-          message: 'The gap-filled kit failed structure validation and was not saved.',
-          details: validation.errors.map(({ path, code }) => ({ path, code })),
-        },
-      });
-    }
-
-    const updated = await persistKit(req, filled);
-    return res.json({ kit: kitBuilderService.withBuilderMetadata(updated), gaps: summary });
+    kitGapQuestionService.prepareGapQuestions({ kit });
   } catch (error) {
     return respondWithBuilderError(res, error);
   }
+  return startJob(res, runnerFrom(deps), {
+    userId: req.userId,
+    type: 'gapQuestions',
+    kitId: req.params.id,
+    input: {},
+  });
 };
 
 module.exports = {

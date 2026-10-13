@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const InterviewPrepKit = require('../src/models/InterviewPrepKit');
 const kitBuilderService = require('../src/services/kitBuilderService');
-const kitRegenerationService = require('../src/services/kitRegenerationService');
+const { JobConflictError } = require('../src/services/generationJobService');
 const {
   updateKitQuestion,
   reorderKitQuestions,
@@ -111,14 +111,6 @@ const withModelStubs = (t, stubs) => {
   }
   t.after(() => {
     for (const method of methods) InterviewPrepKit[method] = originals[method];
-  });
-};
-
-const withRegenerationStub = (t, stub) => {
-  const original = kitRegenerationService.regenerateKitSection;
-  kitRegenerationService.regenerateKitSection = stub;
-  t.after(() => {
-    kitRegenerationService.regenerateKitSection = original;
   });
 };
 
@@ -402,128 +394,85 @@ describe('PATCH /api/kits/:id/questions/:questionId/pin', () => {
 });
 
 
+// The regeneration itself runs as a background job; its persistence rules
+// (validate before write, owner-only update) are covered in generationJobs.test.js.
+const fakeRunner = (impl) => {
+  const specs = [];
+  return {
+    specs,
+    createJob: async (spec) => {
+      specs.push(spec);
+      if (impl) return impl(spec);
+      return { id: 'job-1' };
+    },
+  };
+};
+
 describe('POST /api/kits/:id/regenerate', () => {
-  it('persists a validated regeneration and reports what changed', async (t) => {
+  it('runs the synchronous checks, then starts a regenerate job (202)', async (t) => {
     const calls = withStoredKit(t);
-    const regenerated = buildKit();
-    regenerated.questions[0] = {
-      ...regenerated.questions[0],
-      id: 'q4',
-      question: 'What is backpressure in Node.js streams?',
-    };
-    // the regenerated kit stays cross-reference consistent (as the service guarantees)
-    regenerated.schedule.days = [
-      { day: 1, question_ids: ['q4', 'q2'] },
-      { day: 2, question_ids: ['q3'] },
-    ];
-    regenerated.flashcards[0] = { ...regenerated.flashcards[0], questionIds: ['q4', 'q3'] };
-    const summary = {
-      category: 'technical',
-      replacedQuestionIds: ['q1'],
-      replacementQuestionIds: ['q4'],
-      preservedQuestionIds: [],
-      gapFilledQuestionIds: [],
-      coverage: { coveragePercent: 100, coveredRequirements: [], missingRequirements: [] },
-    };
-    let received = null;
-    withRegenerationStub(t, async (input) => {
-      received = input;
-      return { kit: regenerated, summary };
-    });
-
+    const runner = fakeRunner();
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'technical' } }), res);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: ' technical ' } }), res, { jobRunner: runner });
 
-    assert.equal(res.statusCode, 200);
-    assert.equal(received.category, 'technical');
+    assert.equal(res.statusCode, 202);
+    assert.deepEqual(res.body, { jobId: 'job-1' });
     assert.deepEqual(calls.findOne[0], { _id: 'kit-1', userId: 'user-A' });
-    assert.equal(received.kit.userId, undefined); // the service only sees kit sections
-    const persisted = storedKitOf(calls);
-    assert.equal(persisted.questions[0].id, 'q4');
-    assert.equal(res.body.kit.questions[0].id, 'q4');
-    assert.deepEqual(res.body.regeneration, summary);
+    assert.deepEqual(runner.specs, [{ userId: 'user-A', type: 'regenerate', kitId: 'kit-1', input: { category: 'technical' } }]);
+    assert.equal(calls.findOneAndUpdate.length, 0, 'nothing is written by the request itself');
   });
 
   it('accepts the "section" alias', async (t) => {
     withStoredKit(t);
-    let received = null;
-    withRegenerationStub(t, async (input) => {
-      received = input;
-      return { kit: buildKit(), summary: { category: input.category } };
-    });
+    const runner = fakeRunner();
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { section: 'behavioral' } }), res);
-    assert.equal(received.category, 'behavioral');
-    assert.equal(res.statusCode, 200);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { section: 'technical' } }), res, { jobRunner: runner });
+    assert.equal(res.statusCode, 202);
+    assert.equal(runner.specs[0].input.category, 'technical');
   });
 
   it('returns 400 for a missing category and never touches the kit', async (t) => {
     const calls = withStoredKit(t);
+    const runner = fakeRunner();
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: {} }), res);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: {} }), res, { jobRunner: runner });
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.error.code, 'BUILDER_INVALID_SECTION');
     assert.equal(calls.findOneAndUpdate.length, 0);
+    assert.equal(runner.specs.length, 0);
   });
 
-  it('returns 409 and persists nothing when there is nothing safe to replace', async (t) => {
+  it('returns 409 synchronously when there is nothing safe to replace', async (t) => {
+    // The only behavioral question (q3) is pinned.
     const calls = withStoredKit(t);
-    withRegenerationStub(t, async () => {
-      throw new kitBuilderService.KitBuilderError(
-        'BUILDER_NO_REPLACEABLE_QUESTIONS',
-        'No generated, unpinned questions were found in the "behavioral" section.',
-        { status: 409, details: { category: 'behavioral' } }
-      );
-    });
+    const runner = fakeRunner();
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'behavioral' } }), res);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'behavioral' } }), res, { jobRunner: runner });
     assert.equal(res.statusCode, 409);
     assert.equal(res.body.error.code, 'BUILDER_NO_REPLACEABLE_QUESTIONS');
-    assert.deepEqual(res.body.error.details, { category: 'behavioral' });
+    assert.equal(res.body.error.details.category, 'behavioral');
     assert.equal(calls.findOneAndUpdate.length, 0);
+    assert.equal(runner.specs.length, 0);
   });
 
-  it('does not persist an invalid regeneration result', async (t) => {
-    const calls = withStoredKit(t);
-    withRegenerationStub(t, async () => {
-      throw new kitBuilderService.KitBuilderError(
-        'KIT_REGENERATION_VALIDATION_FAILED',
-        'The regenerated kit failed structure validation and was not saved.',
-        { status: 500, details: [{ path: '$.questions[1].id' }] }
-      );
-    });
+  it('answers 409 JOB_ALREADY_RUNNING with the existing job id', async (t) => {
+    withStoredKit(t);
+    const runner = fakeRunner(() => { throw new JobConflictError('job-existing'); });
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'technical' } }), res);
-    assert.equal(res.statusCode, 500);
-    assert.equal(res.body.error.code, 'KIT_REGENERATION_VALIDATION_FAILED');
-    assert.equal(calls.findOneAndUpdate.length, 0);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'technical' } }), res, { jobRunner: runner });
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.error.code, 'JOB_ALREADY_RUNNING');
+    assert.equal(res.body.error.jobId, 'job-existing');
   });
 
-  it('re-validates the regenerated kit before writing it', async (t) => {
-    const calls = withStoredKit(t);
-    const broken = buildKit();
-    broken.questions[1] = { ...broken.questions[1], id: 'q1' }; // duplicate question id
-    withRegenerationStub(t, async () => ({ kit: broken, summary: { category: 'technical' } }));
-
-    const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-1' }, body: { category: 'technical' } }), res);
-    assert.equal(res.statusCode, 500);
-    assert.equal(res.body.error.code, 'KIT_REGENERATION_VALIDATION_FAILED');
-    assert.equal(calls.findOneAndUpdate.length, 0);
-  });
-
-  it('returns 404 for another user kit before regenerating anything', async (t) => {
+  it('returns 404 for another user kit before starting anything', async (t) => {
     withModelStubs(t, { findOne: async () => null });
-    let serviceCalled = false;
-    withRegenerationStub(t, async () => {
-      serviceCalled = true;
-      return { kit: buildKit(), summary: {} };
-    });
+    const runner = fakeRunner();
     const res = mockResponse();
-    await regenerateKitSection(buildRequest({ params: { id: 'kit-9' }, body: { category: 'technical' } }), res);
+    await regenerateKitSection(buildRequest({ params: { id: 'kit-9' }, body: { category: 'technical' } }), res, { jobRunner: runner });
     assert.equal(res.statusCode, 404);
     assert.equal(res.body.error.code, 'KIT_NOT_FOUND');
-    assert.equal(serviceCalled, false);
+    assert.equal(runner.specs.length, 0);
   });
 });
 
@@ -587,14 +536,15 @@ describe('kit builder ownership and error mapping', () => {
 
   it('ignores a client-supplied userId on regeneration', async (t) => {
     const calls = withStoredKit(t);
-    withRegenerationStub(t, async () => ({ kit: buildKit(), summary: { category: 'technical' } }));
+    const runner = fakeRunner();
     const res = mockResponse();
     await regenerateKitSection(
       buildRequest({ params: { id: 'kit-1' }, body: { category: 'technical', userId: 'attacker' } }),
-      res
+      res,
+      { jobRunner: runner }
     );
     assert.deepEqual(calls.findOne[0], { _id: 'kit-1', userId: 'user-A' });
-    assert.deepEqual(calls.findOneAndUpdate[0].criteria, { _id: 'kit-1', userId: 'user-A' });
+    assert.equal(runner.specs[0].userId, 'user-A');
   });
 });
 

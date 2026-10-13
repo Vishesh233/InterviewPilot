@@ -28,6 +28,7 @@ const InterviewPrepKit = require('../src/models/InterviewPrepKit');
 const { createKit } = require('../src/controllers/interviewPrepKitsController');
 const { generateInterviewPrep } = require('../src/controllers/interviewPrepController');
 const { register, login } = require('../src/controllers/authController');
+const { toStoredError } = require('../src/services/generationJobService');
 
 const mockResponse = () => {
   const res = { statusCode: 200, body: undefined, headers: {} };
@@ -1173,40 +1174,22 @@ describe('authentication and safe production error responses', () => {
     assert.deepEqual(await malformed.json(), { error: { code: 'INVALID_JSON', message: 'Request body must be valid JSON.' } });
   });
 
-  it('returns safe API errors for insufficient input, rate limits, and internal failures', async () => {
-    const input = { jobRole: 'Backend Developer', jobDescription: 'Backend role', companyUrl: 'https://example.com', interviewDays: 1 };
-    const insufficient = mockResponse();
-    const insufficientError = Object.assign(new Error('internal C:\\secret\\file'), {
-      code: 'INSUFFICIENT_JOB_DESCRIPTION',
-      status: 422,
-    });
-    await generateInterviewPrep(
-      { body: input },
-      insufficient,
-      { generateInterviewPrepKit: async () => { throw insufficientError; } }
-    );
-    assert.equal(insufficient.statusCode, 422);
-    assert.equal(JSON.stringify(insufficient.body).includes('C:\\secret'), false);
-
-    const rateLimited = mockResponse();
-    const rateError = Object.assign(new Error('provider secret sk-live'), {
-      code: 'LLM_RATE_LIMITED',
-      status: 429,
-    });
-    await generateInterviewPrep(
-      { body: input },
-      rateLimited,
-      { generateInterviewPrepKit: async () => { throw rateError; } }
-    );
-    assert.equal(rateLimited.statusCode, 429);
-    assert.doesNotMatch(JSON.stringify(rateLimited.body), /sk-live|provider secret/);
-
+  it('rejects unsafe bodies before any job starts, and stores only safe job errors', async () => {
     const unsafeBody = JSON.parse('{"__proto__":{"polluted":true},"jobDescription":"x","companyUrl":"https://example.com","interviewDays":1}');
     const invalid = mockResponse();
     await generateInterviewPrep({ body: unsafeBody }, invalid, {
-      generateInterviewPrepKit: async () => assert.fail('must not call pipeline'),
+      jobRunner: { createJob: async () => assert.fail('must not start a job') },
     });
     assert.equal(invalid.statusCode, 400);
+
+    // Pipeline failures now surface on the job. A non-public error never leaks
+    // its message; a sanitized public error keeps its safe message and code.
+    const internal = toStoredError(Object.assign(new Error('internal C:\\secret\\file sk-live'), { code: 'INSUFFICIENT_JOB_DESCRIPTION', stage: 'Requirement extraction' }));
+    assert.equal(internal.code, 'INSUFFICIENT_JOB_DESCRIPTION');
+    assert.equal(internal.stage, 'Requirement extraction');
+    assert.doesNotMatch(JSON.stringify(internal), /secret|sk-live/);
+    const rate = toStoredError(new LlmError('LLM_RATE_LIMITED', 'The model provider rate limit was reached.', 429), 'Question generation');
+    assert.deepEqual(rate, { code: 'LLM_RATE_LIMITED', message: 'The model provider rate limit was reached.', stage: 'Question generation' });
   });
 });
 
@@ -1415,22 +1398,25 @@ describe('explicit job role input', () => {
       else body.jobRole = jobRole;
       const res = mockResponse();
       await generateInterviewPrep({ body }, res, {
-        generateInterviewPrepKit: async () => assert.fail('pipeline must not run without a valid job role'),
+        jobRunner: { createJob: async () => assert.fail('no job may start without a valid job role') },
       });
       assert.equal(res.statusCode, 400, 'expected 400 for jobRole=' + JSON.stringify(jobRole));
       assert.equal(res.body.error.code, 'VALIDATION_ERROR');
     }
   });
 
-  it('accepts a valid job role and passes it to the pipeline', async () => {
+  it('accepts a valid job role and passes it to the kit job', async () => {
     let received = null;
     const res = mockResponse();
-    await generateInterviewPrep({ body: baseInput() }, res, {
-      generateInterviewPrepKit: async (input) => { received = input; return { accepted: true }; },
+    await generateInterviewPrep({ body: baseInput(), userId: 'user-1' }, res, {
+      jobRunner: { createJob: async (spec) => { received = spec; return { id: 'job-1' }; } },
     });
-    assert.equal(res.statusCode, 200);
-    assert.equal(received.jobRole, 'Backend Developer');
-    assert.equal(received.jobDescription, baseInput().jobDescription);
+    assert.equal(res.statusCode, 202);
+    assert.deepEqual(res.body, { jobId: 'job-1' });
+    assert.equal(received.type, 'kit');
+    assert.equal(received.userId, 'user-1');
+    assert.equal(received.input.jobRole, 'Backend Developer');
+    assert.equal(received.input.jobDescription, baseInput().jobDescription);
   });
 
   it('uses the supplied role as the canonical target role', async () => {

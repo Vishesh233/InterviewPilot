@@ -4,8 +4,10 @@ const connectDB = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const interviewPrepRoutes = require('./routes/interviewPrepRoutes');
 const interviewPrepKitsRoutes = require('./routes/interviewPrepKitsRoutes');
+const generationJobRoutes = require('./routes/generationJobRoutes');
 const { RESUME_REQUEST_JSON_LIMIT_BYTES } = require('./services/resumeTextExtractor');
 const { describeLlmConfig } = require('./services/geminiClient');
+const { describeJobConfig, getDefaultJobRunner } = require('./services/generationJobService');
 
 const app = express();
 app.disable('x-powered-by');
@@ -27,6 +29,7 @@ app.use('/api/auth', authRoutes);
 // The routers already include their full /api/... paths.
 app.use(interviewPrepRoutes);
 app.use(interviewPrepKitsRoutes);
+app.use(generationJobRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Resource not found.' } });
@@ -50,7 +53,17 @@ if (require.main === module) {
   // Connect to the database FIRST, then start listening
   const startServer = async () => {
     console.log('LLM configuration:', JSON.stringify(describeLlmConfig()));
+    console.log('Generation job configuration:', JSON.stringify(describeJobConfig()));
     await connectDB();
+
+    // Requeue jobs a previous process left unfinished (or fail the ones that
+    // were already resumed too often). A recovery failure is logged and the
+    // server still starts, so new requests keep working.
+    try {
+      await getDefaultJobRunner().recoverOnStartup();
+    } catch (error) {
+      console.error('Generation job recovery failed.', JSON.stringify({ name: error?.name || null, code: error?.code ?? null }));
+    }
 
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

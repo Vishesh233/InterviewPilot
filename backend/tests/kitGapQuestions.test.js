@@ -300,44 +300,44 @@ describe('gap question endpoint', () => {
     assert.ok(route.stackLength >= 2, 'the route must be authenticated');
   });
 
-  it('persists the gap-filled kit for the owning user only', async () => {
+  it('checks for gaps synchronously, then starts a gapQuestions job for the owner (202)', async () => {
     const kit = gapFixture();
     const originalFindOne = InterviewPrepKit.findOne;
     const originalUpdate = InterviewPrepKit.findOneAndUpdate;
-    const originalService = kitGapQuestionService.generateGapQuestions;
-    let updateFilter = null;
-    let updatePayload = null;
-
-    kitGapQuestionService.generateGapQuestions = async () => {
-      const { kit: filled, summary } = await generateGapQuestions({
-        kit,
-        deps: {
-          fillCoverageGaps: async ({ questions }) => ({
-            questions: [...questions, { ...gapQuestion(), id: 'q2' }],
-            coverage: { missingRequirements: [] },
-          }),
-        },
-      });
-      return { kit: filled, summary };
-    };
+    const specs = [];
+    let writes = 0;
     InterviewPrepKit.findOne = async (filter) => (filter.userId === 'user_123' ? kit : null);
-    InterviewPrepKit.findOneAndUpdate = async (filter, update) => {
-      updateFilter = filter;
-      updatePayload = update;
-      return { ...kit, ...update.$set };
-    };
+    InterviewPrepKit.findOneAndUpdate = async () => { writes += 1; return null; };
     try {
       const res = mockResponse();
-      await generateKitGapQuestions({ params: { id: 'kit_abc' }, userId: 'user_123' }, res);
-      assert.equal(res.statusCode, 200);
-      assert.deepEqual(Object.keys(updateFilter), ['_id', 'userId']);
-      assert.equal(updatePayload.$set.questions.length, 2);
-      assert.deepEqual(res.body.gaps.addedQuestionIds, ['q2']);
-      assert.equal(res.body.kit.questions[1].status, 'generated');
+      await generateKitGapQuestions({ params: { id: 'kit_abc' }, userId: 'user_123' }, res, {
+        jobRunner: { createJob: async (spec) => { specs.push(spec); return { id: 'job-9' }; } },
+      });
+      assert.equal(res.statusCode, 202);
+      assert.deepEqual(res.body, { jobId: 'job-9' });
+      assert.deepEqual(specs, [{ userId: 'user_123', type: 'gapQuestions', kitId: 'kit_abc', input: {} }]);
+      assert.equal(writes, 0, 'the request itself writes nothing');
     } finally {
       InterviewPrepKit.findOne = originalFindOne;
       InterviewPrepKit.findOneAndUpdate = originalUpdate;
-      kitGapQuestionService.generateGapQuestions = originalService;
+    }
+  });
+
+  it('answers 409 synchronously when the kit has no gaps', async () => {
+    const kit = fullyCoveredKit();
+    const originalFindOne = InterviewPrepKit.findOne;
+    let started = false;
+    InterviewPrepKit.findOne = async () => kit;
+    try {
+      const res = mockResponse();
+      await generateKitGapQuestions({ params: { id: 'kit_abc' }, userId: 'user_123' }, res, {
+        jobRunner: { createJob: async () => { started = true; return { id: 'x' }; } },
+      });
+      assert.equal(res.statusCode, 409);
+      assert.equal(res.body.error.code, 'KIT_NO_COVERAGE_GAPS');
+      assert.equal(started, false);
+    } finally {
+      InterviewPrepKit.findOne = originalFindOne;
     }
   });
 

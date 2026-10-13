@@ -1,6 +1,4 @@
-const {
-  generateInterviewPrepKit,
-} = require('../services/interviewPrepPipelineService');
+const { startJob, runnerFrom } = require('./generationJobsController');
 const { assertSafeUrl } = require('../services/urlSecurityService');
 const { normalizeResumeInput, ResumeInputError } = require('../services/resumeInputService');
 const { MAX_JOB_DESCRIPTION_LENGTH, MAX_JOB_ROLE_LENGTH, isBoundedString, isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
@@ -18,8 +16,9 @@ const isValidCompanyUrl = (value) => {
 };
 
 // POST /api/interview-prep
+// Input is validated synchronously (bad input -> 400). Valid input starts a
+// background kit job and answers 202 { jobId }; poll GET /api/jobs/:id.
 const generateInterviewPrep = async (req, res, deps = {}) => {
-  const generate = deps.generateInterviewPrepKit || generateInterviewPrepKit;
   if (!isPlainSafeObject(req.body) || hasUnsafeKeys(req.body)) {
     return res.status(400).json({
       error: {
@@ -71,44 +70,20 @@ const generateInterviewPrep = async (req, res, deps = {}) => {
     });
   }
 
-  try {
-    const kit = await generate({
-      jobRole,
+  // Valid input: the generation runs as a background job. The resume text is
+  // handed to the job in memory only; the stored job input never contains it.
+  return startJob(res, runnerFrom(deps), {
+    userId: req.userId,
+    type: 'kit',
+    input: {
+      jobRole: jobRole.trim(),
       jobDescription,
       companyUrl,
       interviewDays,
-      ...(resume ? { resume } : {}),
-    });
-
-    return res.status(200).json(kit);
-  } catch (error) {
-    if (error?.code === 'KIT_VALIDATION_FAILED') return res.status(400).json({
-      error: { code: 'KIT_VALIDATION_FAILED', message: 'Interview-prep kit failed structure validation.' },
-    });
-    console.error('Interview-prep generation failed.', {
-      name: error?.name,
-      code: error?.code,
-      status: error?.status,
-      stage: error?.stage,
-    });
-
-    const status = [422, 429, 502, 504].includes(error?.status) ? error.status : 500;
-    return res.status(status).json({
-      error: {
-        code: status === 422
-          ? 'INTERVIEW_PREP_INSUFFICIENT_INPUT'
-          : status === 429
-            ? 'INTERVIEW_PREP_RATE_LIMITED'
-            : 'INTERVIEW_PREP_GENERATION_FAILED',
-        message:
-          status === 422
-            ? 'The job description did not provide enough supported information.'
-            : status === 429
-              ? 'The interview-prep service is busy. Please try again later.'
-              : 'Unable to generate the interview-prep kit. Please try again later.',
-      },
-    });
-  }
+      hasResume: Boolean(resume),
+    },
+    ...(resume ? { memoryInput: { resume } } : {}),
+  });
 };
 
 module.exports = { generateInterviewPrep };

@@ -2,7 +2,7 @@ const InterviewPrepKit = require('../models/InterviewPrepKit');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const kitBuilderService = require('../services/kitBuilderService');
 const practiceService = require('../services/practiceService');
-const { assertSafeUrl } = require('../services/urlSecurityService');
+const { assertPublicKitUrls } = require('../services/pipelineKitService');
 const { isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
 
 const KIT_FIELDS = [
@@ -32,24 +32,6 @@ const kitFromBody = (body) => {
 };
 
 const unsafeKitBody = (body) => !isPlainSafeObject(body) || hasUnsafeKeys(body);
-
-const assertPublicKitUrls = (kit) => {
-  const urls = [
-    ['$.source.companyUrl', kit.source?.companyUrl],
-    ...(Array.isArray(kit.company_brief?.sources)
-      ? kit.company_brief.sources.map((source, index) => [`$.company_brief.sources[${index}].url`, source?.url])
-      : []),
-  ];
-  for (const [path, value] of urls) {
-    if (typeof value !== 'string') continue;
-    try {
-      assertSafeUrl(value);
-    } catch (error) {
-      return { path, code: 'URL_NOT_ALLOWED' };
-    }
-  }
-  return null;
-};
 
 const validationResponse = (res, result) =>
   res.status(400).json({

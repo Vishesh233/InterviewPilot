@@ -20,6 +20,21 @@ const { MAX_RESUME_TEXT_LENGTH } = require('./resumeTextExtractor');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
 const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
+const { runCheckpointedStage } = require('./stageCheckpoint');
+
+// Stage names, in order. They are the checkpoint keys of a background job, so
+// renaming one invalidates the checkpoints of jobs that are still unfinished.
+const KIT_PIPELINE_STAGES = Object.freeze({
+  EXTRACTION: 'Requirement extraction',
+  RESEARCH: 'Company research',
+  GENERATION: 'Question generation',
+  COVERAGE: 'Coverage check',
+  GAP_FILL: 'Coverage gap filling',
+  FINAL_COVERAGE: 'Final coverage check',
+  RESUME_ANALYSIS: 'Resume gap analysis',
+  RESUME_QUESTIONS: 'Resume question generation',
+  SCHEDULE: 'Interview scheduling',
+});
 
 const MIN_INTERVIEW_DAYS = 1;
 const MAX_INTERVIEW_DAYS = 60;
@@ -197,8 +212,11 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
  * Build the full interview-prep kit while preserving the established API response.
  * `buildFinalKit` adapts the untouched stage outputs for consumers that require
  * the existing Appendix A validator shape.
+ *
+ * `context` is optional ({ onStage, checkpoints, saveCheckpoint }, see
+ * stageCheckpoint.js). Without it every stage runs, exactly as before.
  */
-const generateInterviewPrepKit = async (input = {}, deps = {}) => {
+const generateInterviewPrepKit = async (input = {}, deps = {}, context = undefined) => {
   const { jobRole, jobDescription, companyUrl, interviewDays } = input;
   // Optional, already validated resume payload ({ text, fileName, fileType,
   // charCount }) normalized by resumeInputService. Absent => pure JD-only flow.
@@ -214,17 +232,23 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   const analyzeResume = deps.analyzeResumeMatch || analyzeResumeMatch;
   const generateResumeQuestionSet = deps.generateResumeQuestions || generateResumeQuestions;
 
-  // 1. Extract structured requirements from the job description.
-  const extracted = await runStage('Requirement extraction', () =>
-    extract({ jobDescription })
-  );
-  if (!isPlainObject(extracted) || !hasExtractedRequirements(extracted)) {
-    throw pipelineValidationError(
-      'Requirement extraction',
-      'INSUFFICIENT_JOB_DESCRIPTION',
-      'The job description did not provide enough supported information.'
-    );
-  }
+  const S = KIT_PIPELINE_STAGES;
+  const stage = (name, isValid, run) => runCheckpointedStage(context, name, { isValid, run });
+  const hasQuestionList = (value) => isPlainObject(value) && Array.isArray(value.questions);
+
+  // 1. Extract structured requirements from the job description. The gate runs
+  //    inside the stage so an insufficient extraction is never checkpointed.
+  const extracted = await stage(S.EXTRACTION, (value) => isPlainObject(value) && hasExtractedRequirements(value), async () => {
+    const output = await runStage(S.EXTRACTION, () => extract({ jobDescription }));
+    if (!isPlainObject(output) || !hasExtractedRequirements(output)) {
+      throw pipelineValidationError(
+        S.EXTRACTION,
+        'INSUFFICIENT_JOB_DESCRIPTION',
+        'The job description did not provide enough supported information.'
+      );
+    }
+    return output;
+  });
 
   // 1b. The caller-supplied job role is the canonical target role for every
   //     later stage: the question prompt, deterministic coverage, gap filling,
@@ -236,43 +260,47 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   const requirements = canonicalRole ? { ...extracted, role: canonicalRole } : extracted;
 
   // 2. Research the public company page (homepage + a few relevant pages).
-  const research = await runStage('Company research', () =>
-    researchStage({ companyUrl, batchFixtureContext })
+  const research = await stage(S.RESEARCH, (value) => isPlainObject(value) && Array.isArray(value.sources), () =>
+    runStage(S.RESEARCH, () => researchStage({ companyUrl, batchFixtureContext }))
   );
 
   // 3. Generate the initial questions from requirements + research.
-  const generated = await runStage('Question generation', () =>
-    generate({ requirements, research })
+  const generated = await stage(S.GENERATION, hasQuestionList, () =>
+    runStage(S.GENERATION, () => generate({ requirements, research }))
   );
 
   // 4. Deterministic coverage check on the initial questions.
-  const initialCoverage = await runStage('Coverage check', () =>
-    checkCoverage({ requirements, questions: generated.questions })
+  const initialCoverage = await stage(S.COVERAGE, isPlainObject, () =>
+    runStage(S.COVERAGE, () => checkCoverage({ requirements, questions: generated.questions }))
   );
 
-  // 5-6. Fill the gaps, then keep the coverage reported by gap filling.
-  const gapFilled = await runStage('Coverage gap filling', () =>
-    fillGaps({
-      requirements,
-      research,
-      questions: generated.questions,
-      coverage: initialCoverage,
-    })
-  );
-  const questions = gapFilled.questions;
-  if (!Array.isArray(questions) || questions.length === 0) {
-    throw pipelineValidationError(
-      'Question generation',
-      'NO_QUESTIONS_GENERATED',
-      'No usable interview questions were generated.',
-      502
+  // 5-6. Fill the gaps, then keep the coverage reported by gap filling. An
+  //      empty question list fails the stage, so it is never checkpointed.
+  const gapFilled = await stage(S.GAP_FILL, (value) => hasQuestionList(value) && value.questions.length > 0, async () => {
+    const output = await runStage(S.GAP_FILL, () =>
+      fillGaps({
+        requirements,
+        research,
+        questions: generated.questions,
+        coverage: initialCoverage,
+      })
     );
-  }
+    if (!Array.isArray(output?.questions) || output.questions.length === 0) {
+      throw pipelineValidationError(
+        S.GENERATION,
+        'NO_QUESTIONS_GENERATED',
+        'No usable interview questions were generated.',
+        502
+      );
+    }
+    return output;
+  });
+  const questions = gapFilled.questions;
 
   // 7. Re-check coverage on the final question list so the returned coverage is
   //    derived from the questions that are actually in the kit.
-  const coverage = await runStage('Final coverage check', () =>
-    checkCoverage({ requirements, questions })
+  const coverage = await stage(S.FINAL_COVERAGE, isPlainObject, () =>
+    runStage(S.FINAL_COVERAGE, () => checkCoverage({ requirements, questions }))
   );
 
   // 8. Optional resume stage. It runs AFTER the deterministic coverage check on
@@ -283,14 +311,18 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   let resumeAnalysis;
   let finalQuestions = questions;
   if (resumeText) {
-    resumeAnalysis = await runStage('Resume gap analysis', () => analyzeResume({ resumeText, requirements }));
-    const resumeQuestionSet = await runStage('Resume question generation', () =>
-      generateResumeQuestionSet({
-        resumeText,
-        requirements,
-        research,
-        startIndex: questions.length,
-      })
+    resumeAnalysis = await stage(S.RESUME_ANALYSIS, isPlainObject, () =>
+      runStage(S.RESUME_ANALYSIS, () => analyzeResume({ resumeText, requirements }))
+    );
+    const resumeQuestionSet = await stage(S.RESUME_QUESTIONS, isPlainObject, () =>
+      runStage(S.RESUME_QUESTIONS, () =>
+        generateResumeQuestionSet({
+          resumeText,
+          requirements,
+          research,
+          startIndex: questions.length,
+        })
+      )
     );
     const resumeQuestions = Array.isArray(resumeQuestionSet?.questions) ? resumeQuestionSet.questions : [];
     resumeAnalysis = {
@@ -303,8 +335,8 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   }
 
   // 9. Deterministic interview schedule built from the final question ids.
-  const schedule = await runStage('Interview scheduling', () =>
-    createSchedule({ questions: finalQuestions, interviewDays })
+  const schedule = await stage(S.SCHEDULE, isPlainObject, () =>
+    runStage(S.SCHEDULE, () => createSchedule({ questions: finalQuestions, interviewDays }))
   );
 
   // 10. Preserve the established production API response exactly; the resume
@@ -323,4 +355,4 @@ const generateInterviewPrepKit = async (input = {}, deps = {}) => {
   };
 };
 
-module.exports = { generateInterviewPrepKit, buildFinalKit, PipelineError };
+module.exports = { generateInterviewPrepKit, buildFinalKit, PipelineError, KIT_PIPELINE_STAGES };

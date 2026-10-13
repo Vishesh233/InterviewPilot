@@ -27,6 +27,15 @@ With a resume, the pipeline runs two extra stages **after** the deterministic co
 
 The kit gains two optional sections — `resume` (file metadata only) and `resume_analysis` (`matchPercent`, matched/partial/missing lists, detected project names, per-requirement matches with evidence). Resume match and requirement coverage are separate metrics and are never merged.
 
+## Background generation jobs
+
+Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/gaps`) and section regeneration (`POST /api/kits/:id/regenerate`) run as background jobs, because a generation can take minutes and the frontend proxy cuts requests at 30 s. Each endpoint still validates its input synchronously (bad input → 400; no gaps / nothing to regenerate → 409), then answers `202 { jobId }`. A second request of the same type for the same user (and kit) while one is active gets `409 JOB_ALREADY_RUNNING` with the existing `jobId`.
+
+- `GET /api/jobs/:id` (owner only, otherwise 404) returns `type, status (queued | running | retrying | succeeded | failed), stage, stageIndex, stageCount, kitId, error { code, message, stage }, resumeCount, nextRetryAt, canResume, modelsUsed, createdAt, updatedAt`.
+- `POST /api/jobs/:id/resume` requeues an owned `failed` job that has checkpoints from its failed stage (409 otherwise).
+
+The validated output of every finished stage is stored as a checkpoint on the job, so a resumed job skips finished stages. When a stage fails transiently even after the whole model chain, the job waits (`JOB_RESUME_DELAYS_MS`) with status `retrying` and resumes from its checkpoints, at most twice; permanent and validation failures fail at once. `JOB_CONCURRENCY` caps parallel jobs and `JOB_TIMEOUT_MS` fails a job with `JOB_TIMEOUT`. At startup, unfinished jobs are requeued from their checkpoints, or failed with `JOB_INTERRUPTED` once they were resumed twice. On success the worker saves the kit (or the kit changes) itself. Finished jobs are deleted after 7 days (TTL index). An attached resume's text is kept in memory only, never in the job; a resume kit interrupted by a server restart fails with `RESUME_TEXT_UNAVAILABLE` and must be started again.
+
 ## Coverage gap questions
 
 `POST /api/kits/:id/gaps` (authenticated, owner-scoped) appends questions for the kit's *currently uncovered* requirements, which are taken from the deterministic coverage check (`coverage.missingRequirements`) — so the UI can show "Generate questions for N gaps" without changing the evaluator schema. It reuses the existing gap-fill LLM stage, preserves deterministic question and flashcard ids, never rewrites existing questions, drops duplicate questions while reporting their ids, and re-validates the complete kit before anything is persisted.

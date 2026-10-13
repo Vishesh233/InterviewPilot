@@ -67,6 +67,10 @@ class KitBuilderError extends Error {
     this.code = code;
     this.status = Number.isInteger(options.status) ? options.status : 400;
     if (options.details !== undefined) this.details = options.details;
+    // Code of the provider error that caused this failure (for example
+    // LLM_PROVIDER_UNAVAILABLE), so a background job can tell a transient
+    // provider failure from a permanent one.
+    if (typeof options.causeCode === 'string') this.causeCode = options.causeCode;
   }
 }
 
