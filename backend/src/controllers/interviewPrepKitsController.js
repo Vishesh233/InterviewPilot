@@ -1,4 +1,5 @@
 const InterviewPrepKit = require('../models/InterviewPrepKit');
+const GenerationJob = require('../models/GenerationJob');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const kitBuilderService = require('../services/kitBuilderService');
 const practiceService = require('../services/practiceService');
@@ -163,11 +164,33 @@ const updateKit = async (req, res) => {
 };
 
 // DELETE /api/kits/:id
+// Owner only (another user's kit is a 404). Refused with 409 while a generation
+// job for the kit is still active; otherwise the kit and its finished jobs are
+// removed. Both job queries are scoped to req.userId, so they never reveal
+// whether another user's kit exists.
 const deleteKit = async (req, res) => {
   try {
+    const kitJobs = { userId: req.userId, $or: [{ kitId: req.params.id }, { 'result.kitId': req.params.id }] };
+    const activeJob = await GenerationJob.exists({ ...kitJobs, status: { $in: GenerationJob.ACTIVE_JOB_STATUSES } });
+    if (activeJob) {
+      return res.status(409).json({
+        error: {
+          code: 'KIT_JOB_ACTIVE',
+          message: 'This kit is still being updated. Wait for the generation to finish, then delete it.',
+          jobId: String(activeJob._id),
+        },
+      });
+    }
     const deleted = await InterviewPrepKit.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (isNotFoundOrForeign(deleted)) {
       return res.status(404).json({ message: 'Kit not found' });
+    }
+    // The kit is gone at this point. A failed cleanup is logged, not reported
+    // as a failed delete: finished jobs also expire through their TTL index.
+    try {
+      await GenerationJob.deleteMany({ ...kitJobs, status: { $nin: GenerationJob.ACTIVE_JOB_STATUSES } });
+    } catch (cleanupError) {
+      console.error('Kit deleted, but its finished jobs could not be removed.', JSON.stringify({ name: cleanupError?.name || null, code: cleanupError?.code ?? null }));
     }
     return res.json({ message: 'Kit deleted' });
   } catch (error) {

@@ -99,8 +99,42 @@ const toPlainKit = (kit) => {
   return kit;
 };
 
-// Response/intermediate form: plain kit object with defaulted question metadata.
-const withBuilderMetadata = (kit) => applyKitQuestionMetadata(toPlainKit(kit));
+// ---- flashcards ------------------------------------------------------------
+
+// A flashcard linked to a question (questionIds) always shows that question:
+// front = question text, back = answer points + follow-ups (or why). The
+// question is the single source of truth, so an edited or regenerated question
+// never leaves a stale card. A card without an existing linked question keeps
+// its own text, and the card's practice state is never touched.
+const flashcardTextFor = (question) => ({
+  front: question.question.trim(),
+  back: [
+    ...(Array.isArray(question.expectedAnswerPoints) ? question.expectedAnswerPoints : []),
+    ...(Array.isArray(question.followUps) ? question.followUps : []),
+  ].join('\n') || (typeof question.why === 'string' ? question.why : ''),
+});
+
+const withQuestionDerivedFlashcards = (kit) => {
+  if (!isPlainObject(kit) || !Array.isArray(kit.flashcards) || !Array.isArray(kit.questions)) return kit;
+  const questionsById = new Map(
+    kit.questions.filter(isPlainObject).map((question) => [trimString(question.id), question])
+  );
+  return {
+    ...kit,
+    flashcards: kit.flashcards.map((card) => {
+      if (!isPlainObject(card)) return card;
+      const ids = Array.isArray(card.questionIds) ? card.questionIds : Array.isArray(card.question_ids) ? card.question_ids : [];
+      const question = ids
+        .map((id) => questionsById.get(trimString(id)))
+        .find((candidate) => typeof candidate?.question === 'string' && candidate.question.trim());
+      return question ? { ...card, ...flashcardTextFor(question) } : card;
+    }),
+  };
+};
+
+// Response/intermediate form: plain kit object with defaulted question metadata
+// and flashcards derived from their linked questions.
+const withBuilderMetadata = (kit) => withQuestionDerivedFlashcards(applyKitQuestionMetadata(toPlainKit(kit)));
 
 // Only the kit schema sections are ever written back to Mongo ($set), so
 // _id/userId/__v/createdAt can never be part of an update payload.
@@ -541,6 +575,7 @@ module.exports = {
   scheduleDayIdKey,
   rebuildScheduleForQuestions,
   withRemappedFlashcardRefs,
+  withQuestionDerivedFlashcards,
   normalizeQuestionChanges,
   editQuestion,
   setQuestionPinned,

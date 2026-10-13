@@ -1,6 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const InterviewPrepKit = require('../src/models/InterviewPrepKit');
+const GenerationJob = require('../src/models/GenerationJob');
 const {
   createKit,
   listKits,
@@ -59,15 +60,23 @@ const mockResponse = () => {
   return res;
 };
 
-const withModelStubs = (t, stubs) => {
+// Job model stubs default to "no jobs", so no test ever reaches MongoDB.
+const withModelStubs = (t, stubs, jobStubs = {}) => {
   const methods = ['create', 'find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete'];
+  const jobMethods = { exists: async () => null, deleteMany: async () => ({ deletedCount: 0 }), ...jobStubs };
   const originals = {};
+  const jobOriginals = {};
   for (const method of methods) {
     originals[method] = InterviewPrepKit[method];
     if (stubs[method] !== undefined) InterviewPrepKit[method] = stubs[method];
   }
+  for (const [method, stub] of Object.entries(jobMethods)) {
+    jobOriginals[method] = GenerationJob[method];
+    GenerationJob[method] = stub;
+  }
   t.after(() => {
     for (const method of methods) InterviewPrepKit[method] = originals[method];
+    for (const method of Object.keys(jobMethods)) GenerationJob[method] = jobOriginals[method];
   });
 };
 
@@ -286,6 +295,60 @@ describe('interview prep kits CRUD and ownership', () => {
     const deleteRes = mockResponse();
     await deleteKit({ userId: 'user-A', params: { id: 'bad' } }, deleteRes);
     assert.equal(deleteRes.statusCode, 404);
+  });
+});
+
+describe('kit delete: ownership and generation jobs', () => {
+  const ACTIVE = ['queued', 'running', 'retrying'];
+  const kitJobs = (userId) => ({ userId, $or: [{ kitId: 'kit-1' }, { 'result.kitId': 'kit-1' }] });
+
+  it("deletes only the owner's kit and removes that kit's finished jobs for the owner only", async (t) => {
+    const calls = {};
+    withModelStubs(t, {
+      findOneAndDelete: async (criteria) => { calls.kit = criteria; return { _id: 'kit-1' }; },
+    }, {
+      exists: async (filter) => { calls.active = filter; return null; },
+      deleteMany: async (filter) => { calls.cleanup = filter; return { deletedCount: 2 }; },
+    });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(calls.kit, { _id: 'kit-1', userId: 'user-A' });
+    assert.deepEqual(calls.active, { ...kitJobs('user-A'), status: { $in: ACTIVE } });
+    assert.deepEqual(calls.cleanup, { ...kitJobs('user-A'), status: { $nin: ACTIVE } });
+  });
+
+  it("answers 404 for another user's kit and removes no jobs", async (t) => {
+    let cleaned = false;
+    withModelStubs(t, { findOneAndDelete: async () => null }, { deleteMany: async () => { cleaned = true; } });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-B', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 404);
+    assert.equal(cleaned, false);
+  });
+
+  it('refuses with 409 KIT_JOB_ACTIVE while a job for the kit is active, without deleting anything', async (t) => {
+    let deleted = false;
+    withModelStubs(t, {
+      findOneAndDelete: async () => { deleted = true; return { _id: 'kit-1' }; },
+    }, { exists: async () => ({ _id: 'job-9' }) });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.error.code, 'KIT_JOB_ACTIVE');
+    assert.equal(res.body.error.jobId, 'job-9');
+    assert.equal(deleted, false);
+  });
+
+  it('still reports success when only the job cleanup fails, and logs it', async (t) => {
+    const errors = t.mock.method(console, 'error', () => {});
+    withModelStubs(t, { findOneAndDelete: async () => ({ _id: 'kit-1' }) }, {
+      deleteMany: async () => { throw Object.assign(new Error('db down'), { name: 'MongoError' }); },
+    });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(errors.mock.callCount(), 1);
   });
 });
 

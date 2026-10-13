@@ -6,6 +6,7 @@ const {
   isPlainObject,
   trimString,
   toPlainKit,
+  withQuestionDerivedFlashcards,
 } = require('./kitBuilderService');
 const { hasUnsafeKeys, isSafeIdentifier } = require('./inputValidationService');
 
@@ -141,7 +142,8 @@ const comparePracticeItems = (a, b) => {
 };
 
 const buildPracticeItems = (kit) => {
-  const plain = toPlainKit(kit);
+  // Cards show their linked question's current text (single source of truth).
+  const plain = withQuestionDerivedFlashcards(toPlainKit(kit));
   const cards = requirePracticeableKit(plain);
 
   const indexedItems = [];

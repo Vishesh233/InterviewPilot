@@ -20,6 +20,13 @@ const RESUME_MAX_BYTES = 2 * 1024 * 1024;
 const RESUME_MAX_TEXT_CHARS = 40_000;
 const RESUME_EXTENSIONS = ['pdf', 'txt', 'md'];
 
+// A JD shorter than this cannot carry enough requirements to prepare for.
+// Client-side feedback only; the backend's extraction gate still rejects thin
+// job descriptions after the model reads them.
+const MIN_JOB_DESCRIPTION_LENGTH = 100;
+// Field order on screen: the first invalid one receives focus.
+const FIELD_ORDER = ['jobRole', 'jobDescription', 'companyUrl', 'interviewDays'];
+
 const resumeExtension = (name) => (String(name || '').split('.').pop() || '').toLowerCase();
 
 const validateResumeFile = (file) => {
@@ -151,6 +158,7 @@ export default function NewKitForm() {
     if (!form.jobRole.trim()) next.jobRole = 'Add the job role so we can target the right position.';
     else if (form.jobRole.length > 200) next.jobRole = 'Keep the job role under 200 characters.';
     if (!form.jobDescription.trim()) next.jobDescription = 'Add the job description so we can ground the preparation.';
+    else if (form.jobDescription.trim().length < MIN_JOB_DESCRIPTION_LENGTH) next.jobDescription = `Add more of the job description (at least ${MIN_JOB_DESCRIPTION_LENGTH} characters) so we can find its requirements.`;
     else if (form.jobDescription.length > 50000) next.jobDescription = 'Keep the job description under 50,000 characters.';
     try {
       const url = new URL(form.companyUrl.trim());
@@ -158,7 +166,9 @@ export default function NewKitForm() {
     } catch { next.companyUrl = 'Enter a public http:// or https:// company URL.'; }
     if (!Number.isInteger(form.interviewDays) || form.interviewDays < 1 || form.interviewDays > 60) next.interviewDays = 'Choose a whole number from 1 to 60.';
     setErrors(next);
-    return Object.keys(next).length === 0;
+    const firstInvalid = FIELD_ORDER.find((field) => next[field]);
+    if (firstInvalid) document.getElementById(firstInvalid)?.focus();
+    return !firstInvalid;
   };
 
   // Submits the current input as a new background job. Used by the form and by
@@ -223,11 +233,11 @@ export default function NewKitForm() {
 function FormFields({ errors, form, onSubmit, onUpdate, onCancel, error, resume, resumeError, readingResume, onResumeSelected, onRemoveResume }) {
   return <form className="mt-9 space-y-7" onSubmit={onSubmit} noValidate>
     {error && <Alert title="Generation could not be completed">{error}</Alert>}
-    <div><label className="field-label" htmlFor="jobRole">Job role <span className="font-normal text-muted">(required)</span></label><input className={`field-input ${errors.jobRole ? 'border-[#c96c61]' : ''}`} id="jobRole" maxLength={200} name="jobRole" onChange={onUpdate} placeholder="e.g. Backend Developer" type="text" value={form.jobRole} />{errors.jobRole && <p className="mt-2 text-xs text-[#a24a3f]">{errors.jobRole}</p>}</div>
-    <div><label className="field-label" htmlFor="jobDescription">Job description <span className="font-normal text-muted">(required)</span></label><textarea className={`field-input min-h-[240px] resize-y ${errors.jobDescription ? 'border-[#c96c61]' : ''}`} id="jobDescription" maxLength={50000} name="jobDescription" onChange={onUpdate} placeholder="Paste the full job description here…" value={form.jobDescription} /><div className="mt-2 flex justify-between gap-3 text-xs text-muted"><span>{errors.jobDescription || 'More context helps us ground every question.'}</span><span>{form.jobDescription.length.toLocaleString()} / 50,000</span></div></div>
-    <div><label className="field-label" htmlFor="companyUrl">Company URL <span className="font-normal text-muted">(required)</span></label><input className={`field-input ${errors.companyUrl ? 'border-[#c96c61]' : ''}`} id="companyUrl" name="companyUrl" onChange={onUpdate} placeholder="https://company.com" type="url" value={form.companyUrl} />{errors.companyUrl && <p className="mt-2 text-xs text-[#a24a3f]">{errors.companyUrl}</p>}</div>
+    <div><label className="field-label" htmlFor="jobRole">Job role <span className="font-normal text-muted">(required)</span></label><input aria-describedby={errors.jobRole ? 'jobRole-error' : undefined} aria-invalid={Boolean(errors.jobRole)} className={`field-input ${errors.jobRole ? 'border-[#c96c61]' : ''}`} id="jobRole" maxLength={200} name="jobRole" onChange={onUpdate} placeholder="e.g. Backend Developer" type="text" value={form.jobRole} />{errors.jobRole && <p className="mt-2 text-xs text-[#a24a3f]" id="jobRole-error">{errors.jobRole}</p>}</div>
+    <div><label className="field-label" htmlFor="jobDescription">Job description <span className="font-normal text-muted">(required)</span></label><textarea aria-describedby={errors.jobDescription ? 'jobDescription-error' : undefined} aria-invalid={Boolean(errors.jobDescription)} className={`field-input min-h-[240px] resize-y ${errors.jobDescription ? 'border-[#c96c61]' : ''}`} id="jobDescription" maxLength={50000} name="jobDescription" onChange={onUpdate} placeholder="Paste the full job description here…" value={form.jobDescription} /><div className="mt-2 flex justify-between gap-3 text-xs text-muted">{errors.jobDescription ? <span className="text-[#a24a3f]" id="jobDescription-error">{errors.jobDescription}</span> : <span>More context helps us ground every question.</span>}<span>{form.jobDescription.length.toLocaleString()} / 50,000</span></div></div>
+    <div><label className="field-label" htmlFor="companyUrl">Company URL <span className="font-normal text-muted">(required)</span></label><input aria-describedby={errors.companyUrl ? 'companyUrl-error' : undefined} aria-invalid={Boolean(errors.companyUrl)} className={`field-input ${errors.companyUrl ? 'border-[#c96c61]' : ''}`} id="companyUrl" name="companyUrl" onChange={onUpdate} placeholder="https://company.com" type="url" value={form.companyUrl} />{errors.companyUrl && <p className="mt-2 text-xs text-[#a24a3f]" id="companyUrl-error">{errors.companyUrl}</p>}</div>
     <ResumeField onRemove={onRemoveResume} onSelect={onResumeSelected} reading={readingResume} resume={resume} error={resumeError} />
-    <div><div className="flex items-center justify-between gap-4"><label className="field-label" htmlFor="interviewDays">Interview days</label><Badge>1–60 days</Badge></div><input className={`field-input max-w-[180px] ${errors.interviewDays ? 'border-[#c96c61]' : ''}`} id="interviewDays" max="60" min="1" name="interviewDays" onChange={onUpdate} step="1" type="number" value={form.interviewDays} />{errors.interviewDays && <p className="mt-2 text-xs text-[#a24a3f]">{errors.interviewDays}</p>}</div>
+    <div><div className="flex items-center justify-between gap-4"><label className="field-label" htmlFor="interviewDays">Interview days</label><Badge>1–60 days</Badge></div><input aria-describedby={errors.interviewDays ? 'interviewDays-error' : undefined} aria-invalid={Boolean(errors.interviewDays)} className={`field-input max-w-[180px] ${errors.interviewDays ? 'border-[#c96c61]' : ''}`} id="interviewDays" max="60" min="1" name="interviewDays" onChange={onUpdate} step="1" type="number" value={form.interviewDays} />{errors.interviewDays && <p className="mt-2 text-xs text-[#a24a3f]" id="interviewDays-error">{errors.interviewDays}</p>}</div>
     <div className="flex flex-col-reverse gap-3 border-t border-line pt-6 sm:flex-row sm:justify-end"><Button onClick={onCancel} type="button" variant="secondary">Cancel</Button><Button type="submit"><Icon name="spark" size={17} />Generate preparation kit</Button></div>
   </form>;
 }
