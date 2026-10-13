@@ -19,8 +19,9 @@ const { toResumeMetadata } = require('./resumeInputService');
 const { assertResumeTextWithinLimit } = require('./resumeTextExtractor');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
-const { sanitizeCompanyBriefText } = require('./companyBriefSanitizer');
+const { summarizeCompanyBrief } = require('./companyBriefSanitizer');
 const { runCheckpointedStage } = require('./stageCheckpoint');
+const { refineRequirements } = require('./requirementPostProcessing');
 
 // Stage names, in order. They are the checkpoint keys of a background job, so
 // renaming one invalidates the checkpoints of jobs that are still unfinished.
@@ -120,8 +121,9 @@ const hasExtractedRequirements = (requirements) => {
     'qualifications',
     'interviewSignals',
   ];
-  return [requirements.role, requirements.seniority].some((value) => typeof value === 'string' && value.trim()) ||
-    listFields.some((field) => Array.isArray(requirements[field]) && requirements[field].some((value) => typeof value === 'string' && value.trim()));
+  // Role and seniority are metadata, not requirements: an extraction with only
+  // a title or a level has nothing to prepare for.
+  return listFields.some((field) => Array.isArray(requirements[field]) && requirements[field].some((value) => typeof value === 'string' && value.trim()));
 };
 
 const pipelineValidationError = (stage, code, message, status = 422) => {
@@ -132,10 +134,10 @@ const pipelineValidationError = (stage, code, message, status = 422) => {
   return new PipelineError(stage, error);
 };
 
+// The requirement lists only: the job title, seniority and years of experience
+// are role metadata (role.title / role.level / role.yearsExperience).
 const uniqueRequirementIds = (requirements) =>
   [
-    requirements.role,
-    requirements.seniority,
     ...(Array.isArray(requirements.mustHaveSkills) ? requirements.mustHaveSkills : []),
     ...(Array.isArray(requirements.niceToHaveSkills) ? requirements.niceToHaveSkills : []),
     ...(Array.isArray(requirements.responsibilities) ? requirements.responsibilities : []),
@@ -166,11 +168,11 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
     throw new Error('Pipeline returned a malformed company research URL.');
   }
   const roleTitle = normalizeTitle(requirements.role, 'Role not specified');
-  const firstSourceText = research.sources.find((source) => source.text)?.text;
+  const firstSource = research.sources.find((source) => source.text);
   const sourceUrl = research.companyUrl;
   const companyName = normalizeTitle(research.companyTitle, new URL(sourceUrl).hostname || roleTitle);
   const companySummary = safeText(
-    sanitizeCompanyBriefText(firstSourceText),
+    summarizeCompanyBrief({ description: firstSource?.description, text: firstSource?.text }),
     `Research collected from ${sourceUrl}.`
   );
 
@@ -189,6 +191,7 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
     role: {
       title: roleTitle,
       ...(normalizeTitle(requirements.seniority, '') ? { level: requirements.seniority.trim() } : {}),
+      ...(normalizeTitle(requirements.yearsExperience, '') ? { yearsExperience: requirements.yearsExperience.trim() } : {}),
       requirements: uniqueRequirementIds(requirements).map((id) => ({ id })),
     },
     questions,
@@ -256,7 +259,11 @@ const generateInterviewPrepKit = async (input = {}, deps = {}, context = undefin
   //     by a valid role, and the extracted object is copied rather than mutated
   //     because extraction stubs/fixtures may be shared between calls.
   const canonicalRole = typeof jobRole === 'string' && jobRole.trim() ? jobRole.trim() : '';
-  const requirements = canonicalRole ? { ...extracted, role: canonicalRole } : extracted;
+  //     The deterministic clean-up runs again with the canonical role, so a
+  //     list item that is just the supplied job title is removed too.
+  const requirements = canonicalRole
+    ? refineRequirements({ ...extracted, role: canonicalRole }, { jobDescription })
+    : extracted;
 
   // 2. Research the public company page (homepage + a few relevant pages).
   const research = await stage(S.RESEARCH, (value) => isPlainObject(value) && Array.isArray(value.sources), () =>

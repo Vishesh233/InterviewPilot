@@ -189,6 +189,10 @@ const validateKitStructure = (kit) => {
       if (kit.role.level !== undefined && kit.role.level !== null && !isBoundedString(kit.role.level, 100, { allowEmpty: true })) {
         push('$.role.level', 'role.level must be a string when present.', 'INVALID_TYPE');
       }
+      // Optional role metadata (kits saved before it existed have none).
+      if (kit.role.yearsExperience !== undefined && kit.role.yearsExperience !== null && !isBoundedString(kit.role.yearsExperience, 100, { allowEmpty: true })) {
+        push('$.role.yearsExperience', 'role.yearsExperience must be a string when present.', 'INVALID_TYPE');
+      }
       if (kit.role.requirements === undefined || kit.role.requirements === null) {
         push('$.role.requirements', 'role.requirements is required.', 'MISSING_FIELD');
       } else if (!Array.isArray(kit.role.requirements)) {

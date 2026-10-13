@@ -957,8 +957,8 @@ describe('pipeline edge cases', () => {
       { jobDescription: 'Backend role with Node.js', companyUrl: 'https://example.com/', interviewDays: 1 },
       successfulDeps({
         // References nothing at all, so every requirement is a real gap. The role
-        // and seniority are requirements too and must be reported as uncovered
-        // rather than silently omitted from the coverage result.
+        // and seniority are role metadata, not requirements, so they are
+        // neither covered nor missing.
         generateQuestions: async () => ({ questions: [validQuestion({ requirementRefs: [] })] }),
         fillCoverageGaps: async ({ questions }) => ({
           questions,
@@ -966,7 +966,7 @@ describe('pipeline edge cases', () => {
         }),
       })
     );
-    assert.deepEqual(result.coverage.missingRequirements, ['Backend Engineer', 'junior', 'Node.js']);
+    assert.deepEqual(result.coverage.missingRequirements, ['Node.js']);
     assert.deepEqual(result.coverage.coveredRequirements, []);
     assert.equal(result.coverage.coveragePercent, 0);
   });
@@ -1194,12 +1194,11 @@ describe('authentication and safe production error responses', () => {
 });
 
 
-// Regression tests for the deterministic coverage bug where a role requirement
-// referenced by a question (e.g. "Backend Developer" in a question's
-// requirementRefs / "covers" list) was reported as neither covered nor missing,
-// so the UI rendered it as a Gap while coveragePercent was computed over a
-// smaller denominator than the number of requirements displayed.
-describe('deterministic coverage includes the role and seniority requirements', () => {
+// The job title and seniority are role metadata (role.title / role.level), not
+// requirements: coverage never classifies them, and the coverage universe stays
+// identical to the declared role.requirements list, so covered + missing always
+// equals the number of requirements the UI renders.
+describe('deterministic coverage treats role and seniority as metadata', () => {
   const requirements = {
     role: 'Backend Developer',
     seniority: 'senior',
@@ -1210,9 +1209,7 @@ describe('deterministic coverage includes the role and seniority requirements', 
     interviewSignals: [],
   };
 
-  it('marks a role requirement referenced by a question as covered', () => {
-    // The exact production symptom: Q2 lists "Backend Developer" in its
-    // requirementRefs, so the role must be reported as covered.
+  it('never classifies the role or seniority, even when a question references the role', () => {
     const questions = [
       {
         id: 'q1',
@@ -1228,35 +1225,35 @@ describe('deterministic coverage includes the role and seniority requirements', 
 
     const result = checkCoverage({ requirements, questions });
 
-    assert.ok(result.coveredRequirements.includes('Backend Developer'), 'the referenced role must be covered');
-    assert.ok(!result.missingRequirements.includes('Backend Developer'), 'a covered role must not be reported as a gap');
-    // 'senior' is genuinely unreferenced, so it is a real gap rather than being
-    // silently dropped from both lists.
-    assert.deepEqual(result.missingRequirements, ['senior', 'Kubernetes']);
-    assert.equal(result.coveredRequirements.length + result.missingRequirements.length, 6);
+    for (const metadata of ['Backend Developer', 'senior']) {
+      assert.ok(!result.coveredRequirements.includes(metadata), `${metadata} is not a requirement`);
+      assert.ok(!result.missingRequirements.includes(metadata), `${metadata} is never a gap`);
+    }
+    assert.deepEqual(result.missingRequirements, ['Kubernetes']);
+    assert.equal(result.coveredRequirements.length + result.missingRequirements.length, 4);
   });
 
-  it('keeps a genuinely uncovered role requirement uncovered', () => {
+  it('does not report an unreferenced role as a gap', () => {
     const questions = [{ id: 'q1', question: 'Explain MongoDB.', requirementRefs: ['MongoDB'] }];
     const result = checkCoverage({ requirements, questions });
 
     assert.ok(!result.coveredRequirements.includes('Backend Developer'));
-    assert.ok(result.missingRequirements.includes('Backend Developer'), 'an unreferenced role must stay a gap');
-    assert.equal(result.coveragePercent, 17); // 1 of 6 requirements covered
+    assert.ok(!result.missingRequirements.includes('Backend Developer'), 'the role is metadata, never a gap');
+    assert.equal(result.coveragePercent, 25); // 1 of 4 requirements covered
   });
 
 
   it('reports coveragePercent that agrees with covered / total and the gaps', () => {
     const cases = [
       { questions: [], expected: 0 },
-      { questions: [{ id: 'q1', question: 'x', requirementRefs: ['MongoDB'] }], expected: 17 },
+      { questions: [{ id: 'q1', question: 'x', requirementRefs: ['MongoDB'] }], expected: 25 },
       {
         questions: [{
           id: 'q1',
           question: 'x',
           requirementRefs: ['MongoDB', 'database integrations', 'building scalable backend services', 'Backend Developer'],
         }],
-        expected: 67,
+        expected: 75,
       },
       {
         questions: [{
@@ -1279,8 +1276,8 @@ describe('deterministic coverage includes the role and seniority requirements', 
       const result = checkCoverage({ requirements, questions });
       const total = result.coveredRequirements.length + result.missingRequirements.length;
 
-      // covered + missing must equal the full requirement universe (6 here).
-      assert.equal(total, 6, JSON.stringify(result));
+      // covered + missing must equal the full requirement universe (4 here).
+      assert.equal(total, 4, JSON.stringify(result));
       // The percentage must be the mathematical ratio, never a hardcoded 100.
       assert.equal(result.coveragePercent, expected, JSON.stringify(result));
       assert.equal(
@@ -1335,8 +1332,13 @@ describe('deterministic coverage includes the role and seniority requirements', 
       [...declared].sort(),
       'every declared requirement must be classified exactly once'
     );
-    // Only the genuinely unreferenced seniority is left as a gap.
-    assert.deepEqual(result.missingRequirements, ['senior']);
+    // Every listed requirement is referenced; the title and seniority are
+    // metadata, so they are neither declared nor classified.
+    assert.deepEqual(result.missingRequirements, []);
+    assert.equal(declared.includes('Backend Developer'), false);
+    assert.equal(declared.includes('senior'), false);
+    assert.equal(kit.role.title, 'Backend Developer');
+    assert.equal(kit.role.level, 'senior');
   });
 
   it('de-duplicates a role that is also listed in a requirement array', () => {
@@ -1428,9 +1430,10 @@ describe('explicit job role input', () => {
     const kit = buildFinalKit(input, result);
     assert.equal(kit.source.jobRole, 'Backend Developer');
     assert.equal(kit.role.title, 'Backend Developer');
-    assert.ok(kit.role.requirements.some((entry) => entry.id === 'Backend Developer'));
+    // The canonical role is role metadata: the title, never a requirement.
+    assert.ok(!kit.role.requirements.some((entry) => entry.id === 'Backend Developer'));
     const reported = [...kit.coverage.coveredRequirements, ...kit.coverage.missingRequirements];
-    assert.ok(reported.includes('Backend Developer'), 'coverage must report the canonical role');
+    assert.ok(!reported.includes('Backend Developer'), 'coverage never classifies the role');
     const revalidated = validateKitStructure(kit);
     assert.equal(revalidated.valid, true, JSON.stringify(revalidated.errors));
   });

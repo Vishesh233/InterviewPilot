@@ -17,29 +17,21 @@ const extractRequirementStrings = (requirements) => {
   }
 
   // The collected requirement universe MUST be identical to the one
-  // buildFinalKit() writes into `role.requirements`
-  // (interviewPrepPipelineService.uniqueRequirementIds): the role title and
-  // seniority are requirements too.
-  //
-  // They used to be type-checked here but never collected, so they appeared in
-  // neither coveredRequirements nor missingRequirements even though the UI
-  // rendered them from role.requirements. A question was therefore free to
-  // reference the role (which questionGenerationService explicitly allows, and
-  // kitStructureValidator requires to be declared) while coverage reported the
-  // role as neither covered nor missing — showing it as a Gap and computing
-  // coveragePercent over a smaller denominator than the displayed total.
+  // buildFinalKit() / kitFromPipeline() write into `role.requirements`
+  // (interviewPrepPipelineService.uniqueRequirementIds): the requirement lists
+  // only. The job title, seniority and years of experience are role metadata
+  // (role.title / role.level / role.yearsExperience), not requirements, so they
+  // are neither covered nor missing. They are still type-checked.
   //
   // Order matters: it mirrors uniqueRequirementIds so the coverage arrays stay
   // aligned with the role.requirements order the UI renders.
-  const raw = [];
   for (const field of ['role', 'seniority']) {
     const value = requirements[field];
-    if (value === undefined || value === null) continue;
-    if (typeof value !== 'string') {
+    if (value !== undefined && value !== null && typeof value !== 'string') {
       throw new Error(`requirements.${field} must be a string or null.`);
     }
-    raw.push(value);
   }
+  const raw = [];
   for (const field of REQUIREMENT_LIST_FIELDS) {
     const value = requirements[field];
     if (value === undefined || value === null) continue;

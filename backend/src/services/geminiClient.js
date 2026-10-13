@@ -237,6 +237,12 @@ const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // job there is no store and only the log lines are written.
 const llmTelemetry = new AsyncLocalStorage();
 
+// The pipeline / job stage the current LLM call belongs to. runCheckpointedStage
+// runs every stage inside runWithLlmStage, so log lines and events name the real
+// stage without threading it through each service. An explicit input.stage wins.
+const llmStage = new AsyncLocalStorage();
+const runWithLlmStage = (stage, run) => llmStage.run(stage, run);
+
 const emitLlmEvent = (event) => {
   const sink = llmTelemetry.getStore();
   if (!sink || typeof sink.onEvent !== 'function') return;
@@ -678,7 +684,17 @@ const classifyAttempt = (entry, rawError, safeError) => {
   return classifyLlmError(safeError);
 };
 
-const generateContent = async (input = {}) => {
+// Index of the model the chain will actually try after `index`: models in
+// cooldown are skipped, except the last one, which always runs.
+const nextAttemptedIndex = (chain, index) => {
+  for (let next = index + 1; next < chain.length; next += 1) {
+    if (next === chain.length - 1 || !isInCooldown(chain[next])) return next;
+  }
+  return -1;
+};
+
+const generateContent = async (rawInput = {}) => {
+  const input = { ...rawInput, stage: rawInput.stage || llmStage.getStore() || null };
   const chain = buildModelChain(input);
   const maxRetries = getLlmMaxRetries();
   const baseMs = getLlmRetryBaseMs();
@@ -758,9 +774,12 @@ const generateContent = async (input = {}) => {
             console.warn('LLM thinking setting rejected by fallback model; skipping it.', JSON.stringify(rejected));
             emitLlmEvent({ type: 'thinking_rejected', ...rejected });
           }
+          // Name the model that will really be attempted next; the models in
+          // between are in cooldown and get their own "LLM model skipped" line.
+          const target = chain[nextAttemptedIndex(chain, index)];
           const fallback = {
             from: `${entry.provider}:${entry.model}`,
-            to: `${chain[index + 1].provider}:${chain[index + 1].model}`,
+            to: `${target.provider}:${target.model}`,
             reason: classification,
             stage: input.stage || null,
           };
@@ -848,6 +867,7 @@ module.exports = {
   parseGeminiThinkingOverrides,
   resetLlmCooldowns,
   llmTelemetry,
+  runWithLlmStage,
   TRANSIENT_LLM_CODES,
   GEMINI_THINKING_LEVELS,
 };

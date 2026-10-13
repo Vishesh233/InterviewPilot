@@ -1,0 +1,14 @@
+[
+  {
+    "id": "frontend-react-nextjs",
+    "jd": "Frontend Developer (React / Next.js) - Mid Level\n\nWe are hiring a Frontend Developer to build fast, accessible customer-facing web applications. You will work closely with designers and backend engineers and ship features end to end.\n\nResponsibilities:\n- Build and maintain UI features in React and TypeScript with Next.js (App Router and server-side rendering).\n- Integrate REST APIs, handle loading and error states, and manage client-side state.\n- Write unit and integration tests with Jest and React Testing Library, and end-to-end tests with Playwright.\n- Meet WCAG 2.1 AA accessibility: semantic HTML, keyboard navigation and screen-reader support.\n- Improve performance: Core Web Vitals, code splitting, image optimization and bundle size.\n- Take part in code reviews and CI workflows using Git.\n\nRequirements:\n- 3+ years of professional experience with React and modern JavaScript.\n- Strong TypeScript, HTML and CSS skills.\n- Experience consuming and debugging REST APIs.\n- Solid automated testing habits.\n\nNice to have: Tailwind CSS, design systems, GraphQL.",
+    "company_url": "https://vercel.com/",
+    "days": 7
+  },
+  {
+    "id": "backend-nodejs",
+    "jd": "Backend Developer (Node.js) - Mid Level\n\nJoin our platform team to design and run the APIs that power our product for thousands of customers.\n\nResponsibilities:\n- Design, build and maintain REST APIs with Node.js, Express and TypeScript.\n- Model data in PostgreSQL and MongoDB, write efficient queries and manage migrations.\n- Implement authentication and authorization with JWT and OAuth 2.0.\n- Build background processing with message queues such as Redis or RabbitMQ.\n- Containerize services with Docker and deploy them to AWS (ECS, Lambda, S3).\n- Write unit and integration tests with Jest and keep CI pipelines green.\n- Add logging, metrics and tracing, and take part in the on-call rotation.\n\nRequirements:\n- 3+ years of professional backend experience with Node.js.\n- Strong understanding of REST API design, HTTP and security best practices.\n- Experience with relational and document databases.\n- Familiarity with Git and code reviews.\n\nNice to have: GraphQL, Kubernetes, Terraform.",
+    "company_url": "https://www.mongodb.com/",
+    "days": 10
+  }
+]

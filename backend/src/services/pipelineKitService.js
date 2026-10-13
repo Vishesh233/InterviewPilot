@@ -7,6 +7,7 @@ const kitBuilderService = require('./kitBuilderService');
 const practiceService = require('./practiceService');
 const { validateKitStructure } = require('./kitStructureValidator');
 const { assertSafeUrl } = require('./urlSecurityService');
+const { summarizeCompanyBrief } = require('./companyBriefSanitizer');
 
 const nonEmpty = (value) => typeof value === 'string' && value.trim().length > 0;
 
@@ -40,8 +41,8 @@ const kitFromPipeline = (input, result) => {
     ...listOf('qualifications', 'qualification'),
     ...listOf('interviewSignals', 'interview_signal'),
   ];
-  if (canonicalRole) requirementEntries.unshift({ id: canonicalRole, kind: 'role' });
-  if (nonEmpty(requirements.seniority)) requirementEntries.push({ id: requirements.seniority.trim(), kind: 'seniority' });
+  // The job title, seniority and years of experience are role metadata
+  // (role.title / role.level / role.yearsExperience), never requirements.
   const seenRequirementIds = new Set();
   const dedupedRequirementEntries = requirementEntries.filter((entry) => {
     if (seenRequirementIds.has(entry.id)) return false;
@@ -49,7 +50,12 @@ const kitFromPipeline = (input, result) => {
     return true;
   });
   const sources = Array.isArray(research.sources) ? research.sources.filter((source) => nonEmpty(source?.url)) : [];
-  const firstText = sources.find((source) => nonEmpty(source.text))?.text;
+  const firstSource = sources.find((source) => nonEmpty(source.text));
+  // Same summary as the evaluation path (buildFinalKit): sanitized text,
+  // led by the page's meta description, prose sentences only.
+  const summary = firstSource
+    ? summarizeCompanyBrief({ description: firstSource.description, text: firstSource.text })
+    : '';
   const companyUrl = input.companyUrl.trim();
   return {
     source: {
@@ -60,12 +66,13 @@ const kitFromPipeline = (input, result) => {
     },
     company_brief: {
       name: companyNameFor(research, companyUrl),
-      summary: firstText || `Research collected from ${companyUrl}.`,
+      summary: summary || `Research collected from ${companyUrl}.`,
       sources: sources.map(({ url, title }) => ({ url, title: nonEmpty(title) ? title : '' })),
     },
     role: {
       title: roleTitle,
       ...(nonEmpty(requirements.seniority) ? { level: requirements.seniority.trim() } : {}),
+      ...(nonEmpty(requirements.yearsExperience) ? { yearsExperience: requirements.yearsExperience.trim() } : {}),
       requirements: dedupedRequirementEntries,
     },
     questions,

@@ -521,7 +521,8 @@ describe('generation jobs', () => {
       const done = store.jobs.get(job.id);
       assert.equal(done.status, 'succeeded');
       // The role title is a requirement too, and no question references it yet.
-      assert.deepEqual(gapCalls, [['Backend Developer', 'MongoDB']]);
+      // The title is role metadata, not a declared requirement, so it is never a gap.
+      assert.deepEqual(gapCalls, [['MongoDB']]);
       assert.deepEqual(Object.keys(done.checkpoints), ['Coverage gap filling', 'Saving kit']);
       assert.equal(done.stageCount, 2);
       assert.equal(kitModel.updates.length, 1);

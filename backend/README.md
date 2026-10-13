@@ -56,6 +56,14 @@ The validated output of every finished stage is stored as a checkpoint on the jo
 - **Health:** `GET /api/health` returns `200 { status: "ok", db: "up" }` only while MongoDB is connected, otherwise `503 { status: "error", db: "down" }`.
 - **Process:** an uncaught exception or unhandled rejection is logged and the process exits with code 1 (no case is treated as recoverable). On `SIGTERM`/`SIGINT` the server stops accepting connections, finishes in-flight requests, closes MongoDB and exits (forced after 10 s). Running jobs keep their stored status and are resumed by startup recovery. MongoDB connection errors, disconnects and reconnects are logged.
 
+## Requirement extraction and role metadata
+
+- The job title, seniority and years of experience are **role metadata** (`role.title`, `role.level`, `role.yearsExperience`), never requirements: they are not in `role.requirements`, not in coverage, and questions cannot reference them. Kits saved earlier keep their stored title/seniority entries and render as before.
+- The extraction prompt asks for every named technology, tool, framework or standard as its own requirement, treats responsibilities as required, and marks items optional only when the JD says nice to have / bonus / preferred.
+- `requirementPostProcessing.js` then applies deterministic rules to every extraction: it removes title / seniority / years lines (keeping the years as `yearsExperience`), moves nice-to-have items that the JD only mentions outside a nice-to-have section to must-have, and removes exact duplicates, interview signals that reword another requirement, and qualifications that only restate listed skills.
+- The Company Brief summary (`summarizeCompanyBrief`, same on the web/job and evaluation paths) is the sanitized page text led by the homepage's meta description, keeping prose sentences only so menu runs are dropped.
+- LLM log lines carry the real pipeline/job stage, and an `LLM fallback.` line names the model that is actually tried next (models skipped for cooldown get their own `LLM model skipped.` line).
+
 ## Coverage gap questions
 
 `POST /api/kits/:id/gaps` (authenticated, owner-scoped) appends questions for the kit's *currently uncovered* requirements, which are taken from the deterministic coverage check (`coverage.missingRequirements`) — so the UI can show "Generate questions for N gaps" without changing the evaluator schema. It reuses the existing gap-fill LLM stage, preserves deterministic question and flashcard ids, never rewrites existing questions, drops duplicate questions while reporting their ids, and re-validates the complete kit before anything is persisted.
@@ -71,6 +79,8 @@ Run the batch evaluator from this directory:
 ```bash
 npm run evaluate -- --input cases.json --output kits.json
 ```
+
+`scripts/cases/requirement-quality.json` holds two realistic cases (a React/Next.js frontend JD and a Node.js backend JD) used to check requirement-extraction quality.
 
 The input file is a UTF-8 JSON array. Each case must use exactly these fields:
 

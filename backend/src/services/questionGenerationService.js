@@ -76,8 +76,8 @@ const validateRequirements = (requirements) => {
       if (item.trim()) texts.push(item.trim());
     });
   }
-  if (role && role.trim()) texts.push(role.trim());
-  if (seniority && seniority.trim()) texts.push(seniority.trim());
+  // Role and seniority are role metadata (shown in the prompt as context), not
+  // requirements, so a question can never reference them.
 
   if (texts.length === 0) {
     throw new Error('requirements must contain at least one extracted requirement.');

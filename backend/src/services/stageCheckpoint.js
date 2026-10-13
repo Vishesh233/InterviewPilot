@@ -8,6 +8,8 @@
 // Without a context (the evaluation CLI, direct service calls) the stage simply
 // runs, exactly as before.
 
+const { runWithLlmStage } = require('./geminiClient');
+
 const runCheckpointedStage = async (context, stage, { run, isValid }) => {
   const checkpoints = context?.checkpoints;
   if (checkpoints && Object.hasOwn(checkpoints, stage)) {
@@ -20,7 +22,8 @@ const runCheckpointedStage = async (context, stage, { run, isValid }) => {
   }
 
   if (context?.onStage) await context.onStage(stage, { fromCheckpoint: false });
-  const output = await run();
+  // LLM calls made by this stage log and report it as their stage.
+  const output = await runWithLlmStage(stage, run);
   if (context?.saveCheckpoint) await context.saveCheckpoint(stage, output);
   return output;
 };

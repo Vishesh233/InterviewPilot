@@ -269,5 +269,92 @@ const sanitizeCompanyBriefText = (rawText, options = {}) => {
   return clampToLength(segments.join(' '), maxLength);
 };
 
-module.exports = { sanitizeCompanyBriefText, DEFAULT_MAX_LENGTH };
+// ---- display summary -------------------------------------------------------
+
+// The Company Brief summary shown in a kit. sanitizeCompanyBriefText removes
+// recognizable chrome, but a homepage's text still starts with menu and
+// product-name runs that carry no sentence punctuation. The summary therefore
+// uses the page's own meta description first, then only prose sentences.
+const SUMMARY_MAX_LENGTH = 1_200;
+const SUMMARY_MIN_WORDS = 4;
+const SUMMARY_MAX_WORDS = 45;
+// This many capitalized words in front of a sentence are a heading/menu run
+// glued on by tag stripping ("Features Global Delivery Web Application Firewall
+// Host platforms that ..."): the sentence is cut to start at its subject.
+const MIN_LEADING_TITLE_RUN = 3;
+
+// A prefix is a title/menu run when at least this share of its non-function
+// words is capitalized; a prose sentence needs this share of lowercase words.
+const TITLE_RUN_MIN_CAPITALIZED = 0.8;
+const PROSE_MIN_LOWERCASE_SHARE = 0.25;
+const PROSE_MIN_LOWERCASE_WORDS = 2;
+const FUNCTION_WORDS = new Set(['a', 'an', 'the', 'to', 'of', 'in', 'on', 'and', 'for', 'with', 'or', 'by', 'at', '&']);
+
+const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;
+const startsLowercase = (token) => /^[a-z]/.test(token);
+
+const isTitleRun = (tokens) => {
+  const content = tokens.filter((token) => !FUNCTION_WORDS.has(token));
+  return content.length >= MIN_LEADING_TITLE_RUN &&
+    content.filter((token) => !startsLowercase(token)).length / content.length >= TITLE_RUN_MIN_CAPITALIZED;
+};
+
+// Cut at the last "Subject verb" boundary whose whole prefix is a title/menu run.
+const trimLeadingTitleRun = (sentence) => {
+  const tokens = sentence.split(' ');
+  for (let start = tokens.length - 2; start >= MIN_LEADING_TITLE_RUN; start -= 1) {
+    const next = tokens[start + 1];
+    if (/^[A-Z]/.test(tokens[start]) && startsLowercase(next) && !FUNCTION_WORDS.has(next) && isTitleRun(tokens.slice(0, start))) {
+      return tokens.slice(start).join(' ');
+    }
+  }
+  return sentence;
+};
+
+const isProse = (sentence) => {
+  const tokens = sentence.split(' ').filter(Boolean);
+  const lowercase = tokens.filter(startsLowercase).length;
+  return tokens.length >= SUMMARY_MIN_WORDS && tokens.length <= SUMMARY_MAX_WORDS &&
+    lowercase >= PROSE_MIN_LOWERCASE_WORDS && lowercase / tokens.length >= PROSE_MIN_LOWERCASE_SHARE;
+};
+
+const proseSentences = (text) =>
+  text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => trimLeadingTitleRun(sentence.replace(/^[^A-Za-z0-9"“(]+/, '').trim()))
+    .filter((sentence) => /[.!?]["”)]?$/.test(sentence))
+    .filter(isProse);
+
+/**
+ * Display summary for a Company Brief, shared by the web/job path and the
+ * evaluation path. Deterministic; the output is a subset of the input text.
+ *
+ * @param {{ description?: string, text?: string }} page meta description + page text
+ * @param {{ maxLength?: number }} [options]
+ * @returns {string} '' when nothing usable remains
+ */
+const summarizeCompanyBrief = ({ description, text } = {}, options = {}) => {
+  const maxLength = Number.isFinite(options.maxLength) ? options.maxLength : SUMMARY_MAX_LENGTH;
+  const cleanText = sanitizeCompanyBriefText(typeof text === 'string' ? text : '');
+  const parts = [];
+  const keys = [];
+  const add = (sentence) => {
+    const key = normalizedKey(sentence);
+    if (!key || keys.some((kept) => kept.includes(key) || key.includes(kept))) return true;
+    if ([...parts, sentence].join(' ').length > maxLength) return false;
+    parts.push(sentence);
+    keys.push(key);
+    return true;
+  };
+
+  const cleanDescription = sanitizeCompanyBriefText(typeof description === 'string' ? description : '', { maxLength });
+  if (cleanDescription && wordCount(cleanDescription) >= SUMMARY_MIN_WORDS) add(cleanDescription);
+  for (const sentence of proseSentences(cleanText)) {
+    if (!add(sentence)) break;
+  }
+  // No description and no prose sentence: fall back to the sanitized text.
+  return parts.length > 0 ? parts.join(' ') : clampToLength(cleanText, maxLength);
+};
+
+module.exports = { sanitizeCompanyBriefText, summarizeCompanyBrief, DEFAULT_MAX_LENGTH };
 

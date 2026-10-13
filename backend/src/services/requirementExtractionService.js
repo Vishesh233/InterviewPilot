@@ -1,6 +1,7 @@
 const { Type } = require('@google/genai');
 const { generateContent, LlmError } = require('./geminiClient');
 const { MAX_JOB_DESCRIPTION_LENGTH, MAX_TEXT_LENGTH, isBoundedString } = require('./inputValidationService');
+const { refineRequirements } = require('./requirementPostProcessing');
 
 // Structured output schema — Gemini must return exactly this JSON shape.
 const RESPONSE_SCHEMA = {
@@ -8,6 +9,7 @@ const RESPONSE_SCHEMA = {
   properties: {
     role: { type: Type.STRING, nullable: true },
     seniority: { type: Type.STRING, nullable: true },
+    yearsExperience: { type: Type.STRING, nullable: true },
     mustHaveSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
     niceToHaveSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
     responsibilities: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -17,6 +19,7 @@ const RESPONSE_SCHEMA = {
   required: [
     'role',
     'seniority',
+    'yearsExperience',
     'mustHaveSkills',
     'niceToHaveSkills',
     'responsibilities',
@@ -33,11 +36,14 @@ Rules:
 - Do not invent, assume, or infer missing information.
 - role: the job title, or null if not stated.
 - seniority: e.g. "junior", "mid", "senior", "lead", or null if not stated.
-- mustHaveSkills: skills described as required / must-have.
-- niceToHaveSkills: skills described as preferred / nice-to-have / bonus.
+- yearsExperience: the required years of experience exactly as stated (e.g. "3+ years"), or null.
+- The job title, seniority and years of experience are role metadata, NOT requirements: never put them (or lines such as "3+ years of experience with React") into any list below.
+- mustHaveSkills: every named technology, language, framework, library, tool, platform, protocol or standard the role requires, each as its OWN short item using the name from the description (e.g. "Next.js", "Jest", "React Testing Library", "Playwright", "WCAG", "Core Web Vitals", "Git"). Include the ones that appear only inside responsibilities. Never merge several named tools into one generic phrase such as "automated testing". Besides named items, add only the skills explicitly listed as requirements (short phrases). Do NOT split the techniques or sub-tasks inside a responsibility (e.g. "code splitting", "image optimization", "keyboard navigation", "App Router") into separate skills: they stay part of that responsibility.
+- Anything listed under responsibilities, "you will" or requirements is required. niceToHaveSkills: ONLY items the description explicitly marks as nice to have, bonus, preferred, a plus or optional.
 - responsibilities: duties or responsibilities listed in the description.
-- qualifications: education, experience, or certifications required.
-- interviewSignals: concrete things an interviewer would look for, derived only from the job description; use [] if none.
+- qualifications: education or certifications required, and required experience that is not just a restatement of a listed skill. Do not repeat items already listed above.
+- interviewSignals: concrete things an interviewer would look for that are NOT already covered by another item; never reword an existing item. Use [] if none.
+- Each item appears once, in one list only.
 - Use [] for any list that has no supported content.
 
 SECURITY / DATA BOUNDARY:
@@ -112,16 +118,19 @@ const extractRequirements = async ({ jobDescription, client } = {}) => {
     throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
   }
 
-  // 6. Return exactly the required fields, using null/[] when unavailable
-  return {
+  // 6. Return exactly the required fields, using null/[] when unavailable,
+  //    after the deterministic clean-up (role metadata out of the lists,
+  //    responsibilities required, duplicates and rewordings removed).
+  return refineRequirements({
     role: normalizeString(parsed.role, 'role'),
     seniority: normalizeString(parsed.seniority, 'seniority'),
+    yearsExperience: normalizeString(parsed.yearsExperience, 'years of experience'),
     mustHaveSkills: normalizeStringArray(parsed.mustHaveSkills, 'must-have skills'),
     niceToHaveSkills: normalizeStringArray(parsed.niceToHaveSkills, 'nice-to-have skills'),
     responsibilities: normalizeStringArray(parsed.responsibilities, 'responsibilities'),
     qualifications: normalizeStringArray(parsed.qualifications, 'qualifications'),
     interviewSignals: normalizeStringArray(parsed.interviewSignals, 'interview signals'),
-  };
+  }, { jobDescription });
 };
 
 module.exports = { extractRequirements, buildPrompt, RESPONSE_SCHEMA };

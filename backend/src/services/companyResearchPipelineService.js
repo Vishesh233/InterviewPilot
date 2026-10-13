@@ -66,7 +66,14 @@ const researchCompanyPipeline = async ({ companyUrl, batchFixtureContext } = {},
 
   // The homepage is always the first source.
   const sources = [
-    { url: home.companyUrl, title: home.title, text: home.text, category: 'homepage' },
+    {
+      url: home.companyUrl,
+      title: home.title,
+      // The homepage's meta description feeds the Company Brief summary.
+      ...(typeof home.description === 'string' && home.description ? { description: home.description } : {}),
+      text: home.text,
+      category: 'homepage',
+    },
   ];
 
   // 4. Fetch the selected discovered pages; skip any that fail so one broken
