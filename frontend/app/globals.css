@@ -2,13 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens: the single source of truth for colors, radii and shadows.
+ * Colors are RGB channels so Tailwind can add opacity (bg-ink/40); they are
+ * mapped in tailwind.config.js. Text pairs used by the UI meet WCAG AA
+ * (4.5:1): ink, muted and faint on surface/subtle/canvas; *-700 on *-50.
+ */
 :root {
   color-scheme: light;
-  --canvas: #f7f8f4;
-  --ink: #17201b;
-  --muted: #6d766f;
-  --line: #e4e9e2;
-  --brand: #2c8652;
+  /* surfaces */
+  --color-canvas: 247 248 244;      /* #f7f8f4 page background */
+  --color-surface: 255 255 255;     /* cards, header */
+  --color-subtle: 251 252 250;      /* stat tiles, inset panels */
+  --color-sunken: 238 241 237;      /* progress track, gray badge */
+  /* text */
+  --color-ink: 23 32 27;            /* #17201b primary text */
+  --color-muted: 93 102 95;         /* #5d665f secondary text, 5.6:1 on canvas */
+  --color-faint: 111 120 113;       /* #6f7871 placeholder, 4.6:1 on white */
+  /* borders */
+  --color-line: 228 233 226;        /* #e4e9e2 */
+  --color-line-strong: 205 213 203; /* #cdd5cb */
+  /* brand (green) */
+  --color-brand-50: 239 248 240;
+  --color-brand-100: 217 239 220;
+  --color-brand-200: 181 220 189;
+  --color-brand-500: 44 134 82;
+  --color-brand-600: 33 107 66;
+  --color-brand-700: 24 85 54;
+  --color-brand-800: 18 66 42;
+  /* status */
+  --color-warning-50: 255 247 231;
+  --color-warning-200: 241 220 178;
+  --color-warning-700: 135 89 26;
+  --color-danger-50: 255 244 242;
+  --color-danger-200: 241 210 206;
+  --color-danger-500: 201 108 97;
+  --color-danger-700: 154 63 53;
+  --color-info-50: 243 248 247;
+  --color-info-200: 220 231 229;
+  --color-info-700: 53 101 92;
+  /* radius + shadow */
+  --radius-control: 0.625rem;       /* buttons, inputs */
+  --radius-card: 1rem;              /* cards, dialogs */
+  --shadow-card: 0 1px 2px rgb(23 32 27 / 0.04), 0 8px 28px rgb(23 32 27 / 0.035);
+  --shadow-raised: 0 2px 6px rgb(23 32 27 / 0.06), 0 16px 40px rgb(23 32 27 / 0.1);
+  --focus-ring: 0 0 0 3px rgb(44 134 82 / 0.32);
 }
 
 * {
@@ -16,13 +54,13 @@
 }
 
 html {
-  background: var(--canvas);
+  background: rgb(var(--color-canvas));
 }
 
 body {
   margin: 0;
-  background: var(--canvas);
-  color: var(--ink);
+  background: rgb(var(--color-canvas));
+  color: rgb(var(--color-ink));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -44,13 +82,13 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(44, 134, 82, 0.28);
+  outline: 3px solid rgb(var(--color-brand-500) / 0.32);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: #cfe8d3;
-  color: #123d25;
+  background: rgb(var(--color-brand-100));
+  color: rgb(var(--color-brand-800));
 }
 
 @layer components {
@@ -63,7 +101,7 @@ select:focus-visible {
   }
 
   .card {
-    @apply rounded-2xl border border-line bg-white shadow-card;
+    @apply rounded-card border border-line bg-surface shadow-card;
   }
 
   .field-label {
@@ -71,19 +109,32 @@ select:focus-visible {
   }
 
   .field-input {
-    @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink placeholder:text-[#9aa39b] transition focus:border-brand-500 focus:ring-4 focus:ring-brand-50;
+    @apply w-full rounded-control border border-line bg-surface px-4 py-3 text-sm text-ink placeholder:text-faint transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100;
+  }
+
+  /* An invalid field keeps its error color while focused. */
+  .field-input[aria-invalid='true'] {
+    @apply border-danger-500 focus:border-danger-500 focus:ring-danger-200;
+  }
+
+  .field-error {
+    @apply mt-2 text-xs text-danger-700;
   }
 
   .button-primary {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand-600 px-5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-secondary {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-white px-5 text-sm font-semibold text-ink transition hover:border-brand-500 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-line bg-surface px-5 text-sm font-semibold text-ink transition hover:border-brand-500 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-danger {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-danger-700 px-5 text-sm font-semibold text-white transition hover:bg-[rgb(var(--color-danger-700)/0.88)] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-quiet {
-    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-muted transition hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-control px-3 text-sm font-medium text-muted transition hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
   }
 }
 

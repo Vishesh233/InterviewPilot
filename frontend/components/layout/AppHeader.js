@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
+import { Wordmark } from '@/components/brand/Logo';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -21,7 +22,7 @@ export const activeNavHref = (pathname = '') => {
 
 function NavLinks({ pathname, className }) {
   const active = activeNavHref(pathname);
-  return links.map((link) => <Link aria-current={active === link.href ? 'page' : undefined} className={`rounded-lg px-3 py-2 text-sm font-medium transition ${active === link.href ? 'bg-brand-50 text-brand-700' : 'text-muted hover:bg-[#f5f7f4] hover:text-ink'} ${className}`} href={link.href} key={link.href}>{link.label}</Link>);
+  return links.map((link) => <Link aria-current={active === link.href ? 'page' : undefined} className={`rounded-lg px-3 py-2 text-sm font-medium transition ${active === link.href ? 'bg-brand-50 text-brand-700' : 'text-muted hover:bg-canvas hover:text-ink'} ${className}`} href={link.href} key={link.href}>{link.label}</Link>);
 }
 
 export function AppHeader({ compact = false }) {
@@ -34,10 +35,10 @@ export function AppHeader({ compact = false }) {
     router.replace('/login');
   };
 
-  return <header className="border-b border-line bg-white/90 backdrop-blur">
+  return <header className="border-b border-line bg-surface/90 backdrop-blur">
     <div className="container-shell flex min-h-[72px] items-center justify-between gap-5">
-      <Link className="group flex items-center gap-3" href="/dashboard">
-        <span className="text-sm font-semibold tracking-tight text-ink transition group-hover:text-brand-700">InterviewPilot</span>
+      <Link aria-label="InterviewPilot dashboard" className="rounded-control" href="/dashboard">
+        <Wordmark />
       </Link>
       {!compact && <nav aria-label="Primary navigation" className="hidden items-center gap-1 md:flex">
         <NavLinks pathname={pathname} />
@@ -64,11 +65,11 @@ export function AuthShell({ children, eyebrow = '', title, description }) {
   return <main className="min-h-screen bg-canvas lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.72fr)]">
     <section className="relative hidden overflow-hidden border-r border-line bg-brand-700 px-12 py-12 text-white lg:flex lg:flex-col lg:justify-between xl:px-20">
       <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.24) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.24) 1px, transparent 1px)', backgroundSize: '56px 56px' }} />
-      <div className="relative"><span className="text-sm font-semibold">InterviewPilot</span></div>
+      <div className="relative"><Wordmark tone="light" /></div>
       <div className="relative max-w-xl"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-100">Prepare with intention</p><h1 className="mt-5 font-display text-6xl leading-[1.02] tracking-tight">Turn a job description into a clear plan.</h1><p className="mt-6 max-w-md text-base leading-7 text-brand-100">Research the company, understand the requirements, and walk into every interview with a sharper point of view.</p></div>
       <p className="relative text-xs text-brand-100">Your preparation workspace for better conversations.</p>
     </section>
-    <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10"><div className="w-full max-w-[440px]"><div className="mb-10 lg:hidden"><span className="text-sm font-semibold">InterviewPilot</span></div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 className="mt-3 font-display text-4xl tracking-tight text-ink">{title}</h2>{description && <p className="mt-3 text-sm leading-6 text-muted">{description}</p>}<div className="mt-8">{children}</div></div></section>
+    <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10"><div className="w-full max-w-[440px]"><div className="mb-10 lg:hidden"><Wordmark /></div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 className="mt-3 font-display text-4xl tracking-tight text-ink">{title}</h2>{description && <p className="mt-3 text-sm leading-6 text-muted">{description}</p>}<div className="mt-8">{children}</div></div></section>
   </main>;
 }
 

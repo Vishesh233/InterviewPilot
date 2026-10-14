@@ -1,6 +1,6 @@
 import KitWorkspace from '@/components/kit/KitWorkspace';
 
-export const metadata = { title: 'Kit Builder | InterviewPilot' };
+export const metadata = { title: 'Interview kit' };
 
 export default function KitPage() {
   return <KitWorkspace />;
