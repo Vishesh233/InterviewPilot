@@ -66,10 +66,10 @@ export function AuthShell({ children, eyebrow = '', title, description }) {
     <section className="relative hidden overflow-hidden border-r border-line bg-brand-700 px-12 py-12 text-white lg:flex lg:flex-col lg:justify-between xl:px-20">
       <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.24) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.24) 1px, transparent 1px)', backgroundSize: '56px 56px' }} />
       <div className="relative"><Wordmark tone="light" /></div>
-      <div className="relative max-w-xl"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-100">Prepare with intention</p><h1 className="mt-5 font-display text-6xl leading-[1.02] tracking-tight">Turn a job description into a clear plan.</h1><p className="mt-6 max-w-md text-base leading-7 text-brand-100">Research the company, understand the requirements, and walk into every interview with a sharper point of view.</p></div>
+      <div className="relative max-w-xl"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-100">Prepare with intention</p><p className="mt-5 font-display text-6xl leading-[1.02] tracking-tight">Turn a job description into a clear plan.</p><p className="mt-6 max-w-md text-base leading-7 text-brand-100">Research the company, understand the requirements, and walk into every interview with a sharper point of view.</p></div>
       <p className="relative text-xs text-brand-100">Your preparation workspace for better conversations.</p>
     </section>
-    <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10"><div className="w-full max-w-[440px]"><div className="mb-10 lg:hidden"><Wordmark /></div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 className="mt-3 font-display text-4xl tracking-tight text-ink">{title}</h2>{description && <p className="mt-3 text-sm leading-6 text-muted">{description}</p>}<div className="mt-8">{children}</div></div></section>
+    <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10"><div className="w-full max-w-[440px]"><div className="mb-10 lg:hidden"><Wordmark /></div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1 className="mt-3 font-display text-4xl tracking-tight text-ink">{title}</h1>{description && <p className="mt-3 text-sm leading-6 text-muted">{description}</p>}<div className="mt-8">{children}</div></div></section>
   </main>;
 }
 

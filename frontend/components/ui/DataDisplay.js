@@ -1,6 +1,7 @@
-export function ProgressBar({ value = 0, className = '' }) {
+// `label` is the progress bar's accessible name (e.g. "Requirement coverage").
+export function ProgressBar({ value = 0, className = '', label = 'Progress' }) {
   const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
-  return <div className={`h-2 overflow-hidden rounded-full bg-sunken ${className}`} role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={safeValue}>
+  return <div className={`h-2 overflow-hidden rounded-full bg-sunken ${className}`} role="progressbar" aria-label={label} aria-valuemin="0" aria-valuemax="100" aria-valuenow={safeValue}>
     <div className="h-full rounded-full bg-brand-500 transition-[width] duration-300" style={{ width: `${safeValue}%` }} />
   </div>;
 }

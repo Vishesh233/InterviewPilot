@@ -19,6 +19,8 @@ export function useKitWorkspace({ token, kitId }) {
   const [kitJob, setKitJob] = useState(null);
   const [jobEpoch, setJobEpoch] = useState(0);
   const [resumingJob, setResumingJob] = useState(false);
+  // A pending confirmation for the ConfirmDialog: { title, body, confirmLabel, tone, run }.
+  const [confirmation, setConfirmation] = useState(null);
   const kitJobRef = useRef(kitJob);
   kitJobRef.current = kitJob;
 
@@ -109,8 +111,14 @@ export function useKitWorkspace({ token, kitId }) {
     try { setKit(await api.reorderQuestions(token, kitId, ids)); setNotice('Question order saved.'); }
     catch (requestError) { setKit(previous); setError(messageFor(requestError, 'We could not save the new order.')); }
   };
+  const askToDeleteQuestion = (question) => setConfirmation({
+    title: 'Delete this question?',
+    body: `Question ${question.id} will be removed from the kit, its schedule and its flashcard links. This cannot be undone.`,
+    confirmLabel: 'Delete question',
+    tone: 'danger',
+    run: () => deleteQuestion(question),
+  });
   const deleteQuestion = async (question) => {
-    if (!window.confirm(`Delete question ${question.id}? This cannot be undone.`)) return;
     const nextQuestions = questions.filter((item) => item.id !== question.id);
     const dayIds = (day) => day.question_ids || day.questionIds || day.questions || [];
     const nextKit = {
@@ -127,21 +135,35 @@ export function useKitWorkspace({ token, kitId }) {
     catch (requestError) { setError(messageFor(requestError, 'We could not delete that question.')); }
     finally { setSavingId(null); }
   };
-  const regenerate = async (category) => {
-    if (!window.confirm(`Regenerate ${category} questions? Edited and pinned questions will be preserved.`)) return;
-    await startKitJob('regenerate', category);
-  };
+  const regenerate = (category) => setConfirmation({
+    title: `Regenerate ${category.replace('_', ' ')} questions?`,
+    body: 'The generated questions in this section are replaced with new ones. Edited and pinned questions are kept.',
+    confirmLabel: 'Regenerate',
+    tone: 'primary',
+    run: () => startKitJob('regenerate', category),
+  });
   const regenerating = kitJobActive && kitJob.kind === 'regenerate' ? kitJob.category : '';
   const generatingGaps = kitJobActive && kitJob.kind === 'gaps';
   // The backend owns the gap list: coverage.missingRequirements is the only source
   // of truth, so the button only appears when there is a real gap to fill.
   const gaps = kit?.coverage?.missingRequirements;
   const gapCount = Array.isArray(gaps) ? gaps.length : 0;
-  const generateGaps = async () => {
+  const generateGaps = () => {
     if (gapCount === 0) return;
-    if (!window.confirm(`Generate questions for ${gapCount} uncovered requirement${gapCount === 1 ? '' : 's'}? Existing questions are kept.`)) return;
-    await startKitJob('gaps');
+    setConfirmation({
+      title: `Generate questions for ${gapCount} gap${gapCount === 1 ? '' : 's'}?`,
+      body: `New questions are added for ${gapCount} uncovered requirement${gapCount === 1 ? '' : 's'}. Existing questions are kept.`,
+      confirmLabel: 'Generate questions',
+      tone: 'primary',
+      run: () => startKitJob('gaps'),
+    });
   };
+  const confirmPending = async () => {
+    const pending = confirmation;
+    setConfirmation(null);
+    if (pending) await pending.run();
+  };
+  const cancelPending = () => setConfirmation(null);
 
-  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion, regenerate, generateGaps, reload: load, kitJob, kitJobState, kitJobActive, kitJobPollError, resumingJob, resumeKitJob, retryKitJob, dismissKitJob };
+  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion: askToDeleteQuestion, regenerate, generateGaps, reload: load, kitJob, kitJobState, kitJobActive, kitJobPollError, resumingJob, resumeKitJob, retryKitJob, dismissKitJob, confirmation, confirmPending, cancelPending };
 }

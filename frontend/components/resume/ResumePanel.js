@@ -49,7 +49,7 @@ export default function ResumePanel({ kit }) {
         <div><p className="eyebrow">Resume match</p><h3 className="mt-2 text-lg font-semibold text-ink">{percentage}% of requirements demonstrated</h3>{resume.fileName && <p className="mt-1 text-xs text-muted">{resume.fileName} · {resume.fileType === 'pdf' ? 'PDF' : 'text'} · {Number(resume.charCount) || 0} characters analyzed</p>}</div>
         <span className="text-2xl font-semibold text-brand-700">{percentage}%</span>
       </div>
-      <ProgressBar className="mt-5" value={percentage} />
+      <ProgressBar className="mt-5" label="Resume match" value={percentage} />
       <p className="mt-3 text-xs leading-5 text-muted">This is not the question-bank coverage shown in Role &amp; coverage. A requirement can be fully covered by questions and still be missing from your resume.</p>
       {resumeQuestions.length > 0 && <p className="mt-3 text-xs leading-5 text-muted">{resumeQuestions.length} of your questions are grounded in this resume and its projects — they are marked “Resume &amp; project” in the Questions tab.</p>}
     </Card>

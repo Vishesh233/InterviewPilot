@@ -23,6 +23,7 @@ Colors, radii and shadows are CSS variables in `app/globals.css` (the design tok
 
 ## Routes
 
+- `/` (landing page; signed-in visitors go to the dashboard)
 - `/login` and `/register`
 - `/dashboard`
 - `/kits/new`
