@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AuthShell } from '@/components/layout/AppHeader';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Alert, Button } from '@/components/ui/Primitives';
+import { ServerWakePing } from '@/components/layout/ServerWakeBanner';
 
 // Mirrors the backend register rules (authController). bcrypt only reads the
 // first 72 bytes, so longer passwords are rejected rather than truncated.
@@ -60,6 +61,7 @@ export function AuthForm({ mode = 'login' }) {
   };
 
   return <AuthShell title={isLogin ? 'Welcome back' : 'Start preparing'} description={isLogin ? 'Sign in to return to your interview workspace.' : 'Create a focused preparation workspace in under a minute.'}>
+    <ServerWakePing />
     <form className="space-y-5" onSubmit={submit}>
       {error && <Alert>{error}</Alert>}
       <div><label className="field-label" htmlFor="email">Email address</label><input autoComplete="email" className="field-input" id="email" name="email" onChange={update} placeholder="you@example.com" required type="email" value={form.email} /></div>

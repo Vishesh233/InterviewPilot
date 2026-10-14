@@ -1,3 +1,9 @@
+import { SLOW_REQUEST_MS, ensureServerAwake, markServerResponded, markSlowRequest } from '@/lib/serverWake';
+
+// Production sets NEXT_PUBLIC_API_URL to the API's public URL, so the browser
+// calls it directly and each user keeps their own IP (and rate-limit bucket).
+// Unset (local development), requests go through the same-origin /api/proxy
+// rewrite in next.config.mjs. Every request in the app goes through apiRequest.
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '/api/proxy').replace(/\/$/, '');
 
 // Every request is cut off client-side after this long. Long generations run as
@@ -57,13 +63,16 @@ const readError = async (response) => {
   );
 };
 
-export async function apiRequest(path, { token, body, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, ...options } = {}) {
+// One HTTP request. `quiet` skips the slow-request notice (background pings).
+async function sendRequest(path, { token, body, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, quiet = false, ...options } = {}) {
   const headers = new Headers(options.headers || {});
   if (body !== undefined) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Still pending after a few seconds: probably a cold start, so say so.
+  const slowTimer = quiet ? null : setTimeout(markSlowRequest, SLOW_REQUEST_MS);
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -84,7 +93,9 @@ export async function apiRequest(path, { token, body, timeoutMs = DEFAULT_REQUES
     });
   } finally {
     clearTimeout(timer);
+    if (slowTimer) clearTimeout(slowTimer);
   }
+  markServerResponded();
 
   if (response.status === 401 && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('interviewpilot:unauthorized'));
@@ -101,9 +112,60 @@ export async function apiRequest(path, { token, body, timeoutMs = DEFAULT_REQUES
   }
 }
 
+// The API answers /api/health with 200 once it is up and connected to MongoDB.
+const probeHealth = async (timeoutMs) => {
+  await sendRequest('/api/health', { timeoutMs, quiet: true });
+  return true;
+};
+
+const UNREACHABLE_CODES = new Set(['NETWORK_ERROR', 'REQUEST_TIMEOUT']);
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+
+// A request is replayed after a wake-up only when sending it twice is
+// harmless: a read, a call marked `replayable` (login), or a request that
+// never connected. A write that timed out may already have run on the server
+// (e.g. created a kit or started a job), so it is not sent again.
+const canReplay = (error, { method = 'GET', replayable = false }) =>
+  replayable || SAFE_METHODS.has(method.toUpperCase()) || error.code === 'NETWORK_ERROR';
+
+/**
+ * Sends a request. When the API cannot be reached (network error or timeout,
+ * e.g. while a sleeping free-tier server starts), it waits for the server to
+ * wake up (shared loop, up to ~90 s, with a longer health-check timeout) and
+ * then retries the request once if that is safe.
+ */
+export async function apiRequest(path, { replayable, ...options } = {}) {
+  try {
+    return await sendRequest(path, options);
+  } catch (error) {
+    if (!(error instanceof ApiError) || !UNREACHABLE_CODES.has(error.code)) throw error;
+    const awake = await ensureServerAwake(probeHealth);
+    if (!awake) {
+      throw new ApiError('The server did not wake up in time. Please try again in a minute.', { code: 'SERVER_UNAVAILABLE' });
+    }
+    if (!canReplay(error, { method: options.method, replayable })) {
+      throw new ApiError('The server was waking up and may not have finished that request. Check whether it went through, then try again.', {
+        code: 'SERVER_WOKE',
+      });
+    }
+    return sendRequest(path, options);
+  }
+}
+
+// Fire-and-forget health check on pages people open before signing in, so a
+// sleeping server starts waking while they type. Never shows the notice.
+export function wakeServer() {
+  sendRequest('/api/health', { timeoutMs: 90_000, quiet: true }).catch((error) => {
+    console.info('Server wake-up ping did not complete.', error?.code || error?.name || 'unknown');
+  });
+}
+
+// Used by the "Retry" button after a failed wake-up.
+export const retryServerWake = () => ensureServerAwake(probeHealth);
+
 export const api = {
   register: (body) => apiRequest('/api/auth/register', { method: 'POST', body }),
-  login: (body) => apiRequest('/api/auth/login', { method: 'POST', body }),
+  login: (body) => apiRequest('/api/auth/login', { method: 'POST', body, replayable: true }),
   listKits: (token) => apiRequest('/api/kits', { token }),
   getKit: (token, id) => apiRequest(`/api/kits/${encodeURIComponent(id)}`, { token }),
   createKit: (token, body) => apiRequest('/api/kits', { method: 'POST', token, body }),

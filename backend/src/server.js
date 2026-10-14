@@ -1,9 +1,12 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
 const mongoose = require('mongoose');
 const connectDB = require('./config/database');
 const { isDbConnected } = require('./config/database');
 const { rateLimiters } = require('./middleware/rateLimiters');
+const { parseTrustProxy, buildCorsOptions, readAllowedOrigins, HELMET_OPTIONS } = require('./config/http');
 const { installCrashHandlers, installShutdownHandlers } = require('./config/processLifecycle');
 const authRoutes = require('./routes/authRoutes');
 const interviewPrepRoutes = require('./routes/interviewPrepRoutes');
@@ -13,22 +16,16 @@ const { RESUME_REQUEST_JSON_LIMIT_BYTES } = require('./services/resumeTextExtrac
 const { describeLlmConfig } = require('./services/geminiClient');
 const { describeJobConfig, getDefaultJobRunner } = require('./services/generationJobService');
 
-// TRUST_PROXY: unset/false = off (default), true = trust every hop, a number =
-// trust that many hops (e.g. 1 behind one proxy such as Render), anything else
-// is passed to Express as-is (e.g. "loopback" or a comma-separated IP list).
-// It decides req.ip, which keys the per-IP rate limits.
-const parseTrustProxy = (raw) => {
-  const value = typeof raw === 'string' ? raw.trim() : '';
-  if (!value || /^(false|off|no|0)$/i.test(value)) return false;
-  if (/^(true|on|yes)$/i.test(value)) return true;
-  if (/^\d+$/.test(value)) return Number(value);
-  return value;
-};
-
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 const PORT = process.env.PORT || 5000;
+
+// Security headers and CORS come first, so every response, including the
+// health check, 404s and 429s, carries them. Preflight (OPTIONS) requests are
+// answered by the cors middleware before any route or rate limit.
+app.use(helmet(HELMET_OPTIONS));
+app.use(cors(buildCorsOptions()));
 
 // Declared before the /api rate limit, so platform health checks never count
 // against it. 200 only while MongoDB is connected.
@@ -82,6 +79,9 @@ if (require.main === module) {
   // Connect to the database FIRST, then start listening
   const startServer = async () => {
     console.log('LLM configuration:', JSON.stringify(describeLlmConfig()));
+    const corsOrigins = readAllowedOrigins();
+    console.log('CORS allowed origins:', JSON.stringify(corsOrigins));
+    if (corsOrigins.length === 0) console.warn('CORS_ORIGINS is not set: no browser origin can call this API.');
     console.log('Generation job configuration:', JSON.stringify(describeJobConfig()));
     await connectDB();
 

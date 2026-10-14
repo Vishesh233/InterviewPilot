@@ -1,5 +1,6 @@
 import './globals.css';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import { ServerWakeBanner } from '@/components/layout/ServerWakeBanner';
 
 // Absolute base for Open Graph / Twitter image URLs: NEXT_PUBLIC_SITE_URL when
 // set, else the Vercel production domain, else the local dev server.
@@ -39,6 +40,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <AuthProvider>{children}</AuthProvider>
+        <ServerWakeBanner />
       </body>
     </html>
   );

@@ -1,0 +1,74 @@
+# Render Blueprint for the InterviewPilot API (backend/).
+# Secrets and per-deploy settings use `sync: false`: Render asks for their
+# values when the Blueprint is applied and never reads them from this file.
+# See DEPLOYMENT.md for the value of every variable.
+services:
+  - type: web
+    name: interviewpilot-api
+    runtime: node
+    plan: free
+    branch: main
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Required
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: TRUST_PROXY
+        sync: false
+      # LLM provider chain (optional; defaults in .env.example)
+      - key: GEMINI_MODEL
+        sync: false
+      - key: GEMINI_FALLBACK_MODELS
+        sync: false
+      - key: GEMINI_THINKING
+        sync: false
+      - key: GEMINI_THINKING_OVERRIDES
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: LLM_MAX_RETRIES
+        sync: false
+      - key: LLM_RETRY_BASE_MS
+        sync: false
+      - key: LLM_COOLDOWN_MS
+        sync: false
+      - key: LLM_TIMEOUT_MS
+        sync: false
+      # Background generation jobs (optional)
+      - key: JOB_CONCURRENCY
+        sync: false
+      - key: JOB_TIMEOUT_MS
+        sync: false
+      - key: JOB_RESUME_DELAYS_MS
+        sync: false
+      # Rate limits (optional; defaults apply when unset)
+      - key: RATE_LIMIT_AUTH_MAX
+        sync: false
+      - key: RATE_LIMIT_AUTH_WINDOW_MS
+        sync: false
+      - key: RATE_LIMIT_JOB_CREATE_MAX
+        sync: false
+      - key: RATE_LIMIT_JOB_CREATE_WINDOW_MS
+        sync: false
+      - key: RATE_LIMIT_API_MAX
+        sync: false
+      - key: RATE_LIMIT_API_WINDOW_MS
+        sync: false
+      - key: RATE_LIMIT_JOB_POLL_MAX
+        sync: false
+      - key: RATE_LIMIT_JOB_POLL_WINDOW_MS
+        sync: false
