@@ -88,49 +88,53 @@ const extractRequirements = async ({ jobDescription, client } = {}) => {
     throw new Error('jobDescription is required and must be a non-empty string.');
   }
 
+  // Parses and validates one model answer. Throwing an LLM_INVALID_* /
+  // LLM_NO_USABLE_ITEMS error makes the shared adapter try the next model.
+  const parseOutput = (text) => {
+    // 5. Invalid model response — empty or non-JSON output
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
+    }
+
+    // 6. Return exactly the required fields, using null/[] when unavailable,
+    //    after the deterministic clean-up (role metadata out of the lists,
+    //    responsibilities required, duplicates and rewordings removed).
+    return refineRequirements({
+      role: normalizeString(parsed.role, 'role'),
+      seniority: normalizeString(parsed.seniority, 'seniority'),
+      yearsExperience: normalizeString(parsed.yearsExperience, 'years of experience'),
+      mustHaveSkills: normalizeStringArray(parsed.mustHaveSkills, 'must-have skills'),
+      niceToHaveSkills: normalizeStringArray(parsed.niceToHaveSkills, 'nice-to-have skills'),
+      responsibilities: normalizeStringArray(parsed.responsibilities, 'responsibilities'),
+      qualifications: normalizeStringArray(parsed.qualifications, 'qualifications'),
+      interviewSignals: normalizeStringArray(parsed.interviewSignals, 'interview signals'),
+    }, { jobDescription });
+  };
+
   // 3. Call Gemini with structured JSON output (isolated inside this service)
-  let text;
   try {
     const response = await generateContent({
       contents: buildPrompt(jobDescription),
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
       client,
+      acceptOutput: parseOutput,
     });
-    text = response.text;
+    return response.value;
   } catch (error) {
     if (error instanceof LlmError) throw error;
     throw new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
   }
-
-  // 5. Invalid model response — empty or non-JSON output
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
-  }
-
-  // 6. Return exactly the required fields, using null/[] when unavailable,
-  //    after the deterministic clean-up (role metadata out of the lists,
-  //    responsibilities required, duplicates and rewordings removed).
-  return refineRequirements({
-    role: normalizeString(parsed.role, 'role'),
-    seniority: normalizeString(parsed.seniority, 'seniority'),
-    yearsExperience: normalizeString(parsed.yearsExperience, 'years of experience'),
-    mustHaveSkills: normalizeStringArray(parsed.mustHaveSkills, 'must-have skills'),
-    niceToHaveSkills: normalizeStringArray(parsed.niceToHaveSkills, 'nice-to-have skills'),
-    responsibilities: normalizeStringArray(parsed.responsibilities, 'responsibilities'),
-    qualifications: normalizeStringArray(parsed.qualifications, 'qualifications'),
-    interviewSignals: normalizeStringArray(parsed.interviewSignals, 'interview signals'),
-  }, { jobDescription });
 };
 
 module.exports = { extractRequirements, buildPrompt, RESPONSE_SCHEMA };

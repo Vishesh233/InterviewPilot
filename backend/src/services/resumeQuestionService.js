@@ -217,7 +217,91 @@ const generateResumeQuestions = async ({
   }
   const researchData = collectResearch(research);
 
-  let text;
+  // Parses and validates one model answer. Throwing an LLM_INVALID_* /
+  // LLM_NO_USABLE_ITEMS error makes the shared adapter try the next model.
+  const parseOutput = (text) => {
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(toJsonText(text));
+    } catch (error) {
+      throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
+      throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
+    }
+
+    const projects = groundProjectNames(parsed.projects, resumeText);
+    const resumeTokens = new Set(tokensOf(resumeText));
+    const allowedUrls = new Set(researchData.allowedUrls);
+    const canonicalRequirements = new Map(requirementTexts.map((value) => [value.toLowerCase(), value]));
+
+    const questions = [];
+    let rejected = 0;
+    const candidates = parsed.questions.slice(0, MAX_CANDIDATE_QUESTIONS);
+    for (const raw of candidates) {
+      if (!raw || typeof raw !== 'object') continue;
+
+      const question = { id: `q${Number(startIndex) + questions.length + 1}` };
+      for (const field of QUESTION_FIELDS) question[field] = raw[field];
+      question.category = RESUME_CATEGORY;
+
+      // requirementRefs must resolve to exact extracted requirement strings.
+      const refs = Array.isArray(question.requirementRefs)
+        ? question.requirementRefs
+            .filter((ref) => typeof ref === 'string')
+            .map((ref) => canonicalRequirements.get(ref.trim().toLowerCase()))
+            .filter(Boolean)
+        : [];
+      question.requirementRefs = [...new Set(refs)];
+
+      // sources must come from the supplied research only.
+      const sourcesValid =
+        !Array.isArray(question.sources) || question.sources.every((url) => typeof url === 'string' && allowedUrls.has(url));
+      if (!sourcesValid) {
+        rejected += 1;
+        continue;
+      }
+
+      if (!validateQuestion(question).valid) {
+        rejected += 1;
+        continue;
+      }
+      if (!isQuestionGroundedInResume(question, { resumeText, resumeTokens, projectNames: projects })) {
+        rejected += 1;
+        continue;
+      }
+      questions.push(question);
+    }
+
+    // Candidates were returned but every one was rejected: nothing usable, so
+    // the next model is tried. The unchanged result travels with the error in
+    // case no model does better (the resume stage is optional).
+    if (candidates.length > 0 && questions.length === 0) {
+      const error = new LlmError('LLM_NO_USABLE_ITEMS', `All ${candidates.length} resume questions were rejected by validation.`, 502);
+      error.partial = {
+        projects,
+        questions,
+        summary: { generatedCount: candidates.length, acceptedCount: 0, rejectedCount: rejected, category: RESUME_CATEGORY, supportedCategories: QUESTION_CATEGORIES },
+      };
+      throw error;
+    }
+
+    return {
+      projects,
+      questions,
+      summary: {
+        generatedCount: candidates.length,
+        acceptedCount: questions.length,
+        rejectedCount: rejected,
+        category: RESUME_CATEGORY,
+        supportedCategories: QUESTION_CATEGORIES,
+      },
+    };
+  };
+
   try {
     const response = await generateContent({
       contents: buildPrompt({
@@ -230,80 +314,17 @@ const generateResumeQuestions = async ({
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
       client,
+      acceptOutput: parseOutput,
     });
-    text = response.text;
+    return response.value;
   } catch (error) {
+    if (error?.code === 'LLM_NO_USABLE_OUTPUT' && error.lastOutputError?.partial) {
+      console.warn('Resume question generation produced no usable questions; continuing without them.', JSON.stringify(error.lastOutputError.partial.summary));
+      return error.lastOutputError.partial;
+    }
     if (error instanceof LlmError) throw error;
     throw new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
   }
-
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(toJsonText(text));
-  } catch (error) {
-    throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
-    throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
-  }
-
-  const projects = groundProjectNames(parsed.projects, resumeText);
-  const resumeTokens = new Set(tokensOf(resumeText));
-  const allowedUrls = new Set(researchData.allowedUrls);
-  const canonicalRequirements = new Map(requirementTexts.map((value) => [value.toLowerCase(), value]));
-
-  const questions = [];
-  let rejected = 0;
-  const candidates = parsed.questions.slice(0, MAX_CANDIDATE_QUESTIONS);
-  for (const raw of candidates) {
-    if (!raw || typeof raw !== 'object') continue;
-
-    const question = { id: `q${Number(startIndex) + questions.length + 1}` };
-    for (const field of QUESTION_FIELDS) question[field] = raw[field];
-    question.category = RESUME_CATEGORY;
-
-    // requirementRefs must resolve to exact extracted requirement strings.
-    const refs = Array.isArray(question.requirementRefs)
-      ? question.requirementRefs
-          .filter((ref) => typeof ref === 'string')
-          .map((ref) => canonicalRequirements.get(ref.trim().toLowerCase()))
-          .filter(Boolean)
-      : [];
-    question.requirementRefs = [...new Set(refs)];
-
-    // sources must come from the supplied research only.
-    const sourcesValid =
-      !Array.isArray(question.sources) || question.sources.every((url) => typeof url === 'string' && allowedUrls.has(url));
-    if (!sourcesValid) {
-      rejected += 1;
-      continue;
-    }
-
-    if (!validateQuestion(question).valid) {
-      rejected += 1;
-      continue;
-    }
-    if (!isQuestionGroundedInResume(question, { resumeText, resumeTokens, projectNames: projects })) {
-      rejected += 1;
-      continue;
-    }
-    questions.push(question);
-  }
-
-  return {
-    projects,
-    questions,
-    summary: {
-      generatedCount: candidates.length,
-      acceptedCount: questions.length,
-      rejectedCount: rejected,
-      category: RESUME_CATEGORY,
-      supportedCategories: QUESTION_CATEGORIES,
-    },
-  };
 };
 
 module.exports = {

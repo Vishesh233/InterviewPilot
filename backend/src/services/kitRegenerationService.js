@@ -143,8 +143,24 @@ const regenerateKitSection = async ({ kit, category, deps = {}, context } = {}) 
     isValid: hasQuestionList,
     run: async () => {
       try {
-        return await generate({ requirements, research });
+        // Ask for this section's category, and treat an answer without a
+        // single usable replacement as unusable so the next model is tried.
+        return await generate({
+          requirements,
+          research,
+          category: section,
+          isUsable: (questions) => questions.some((candidate) =>
+            prepareReplacement(candidate, { category: section, requirementIds, allowedUrls }) !== null),
+        });
       } catch (error) {
+        // The whole model chain answered, but nothing was usable for this section.
+        if (error?.code === 'LLM_NO_USABLE_OUTPUT') {
+          throw new KitBuilderError(
+            'REGENERATE_NO_USABLE_QUESTIONS',
+            `The AI models returned no usable "${section}" questions, so nothing was changed. Please try again in a minute.`,
+            { status: 502, causeCode: error.causeCode || error.code }
+          );
+        }
         const detail = error?.isPublic && typeof error.message === 'string'
           ? error.message
           : 'The model provider could not complete the request.';
@@ -167,8 +183,8 @@ const regenerateKitSection = async ({ kit, category, deps = {}, context } = {}) 
 
   if (replacements.length === 0) {
     throw new KitBuilderError(
-      'BUILDER_NO_REPLACEMENTS_GENERATED',
-      `Question generation produced no usable "${section}" questions, so nothing was changed.`,
+      'REGENERATE_NO_USABLE_QUESTIONS',
+      `The AI models returned no usable "${section}" questions, so nothing was changed. Please try again in a minute.`,
       {
         status: 409,
         details: {
@@ -185,7 +201,9 @@ const regenerateKitSection = async ({ kit, category, deps = {}, context } = {}) 
   const idMap = new Map();
   let cursor = 0;
   const nextQuestions = questions.map((question) => {
-    if (!builder.isReplaceableQuestion(question) || cursor >= replacements.length) {
+    // Only the regenerated section's own replaceable questions are swapped;
+    // questions of every other category stay exactly as they are.
+    if (question?.category !== section || !builder.isReplaceableQuestion(question) || cursor >= replacements.length) {
       return builder.applyQuestionMetadata(question);
     }
     const replacementId = replacementIds[cursor];

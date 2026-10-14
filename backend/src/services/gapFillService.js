@@ -143,112 +143,131 @@ const fillCoverageGaps = async ({ requirements, research, questions, coverage, c
   }
   const researchData = collectResearch(research);
 
+  // Parses and validates one model answer. Throwing an LLM_INVALID_* /
+  // LLM_NO_USABLE_ITEMS error makes the shared adapter try the next model.
+  const parseOutput = (text) => {
+    // 5. Empty, non-JSON, or wrong-shape responses.
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(toJsonText(text));
+    } catch (error) {
+      throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
+      throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
+    }
+
+    // 6. Validate each new question and assign ids continuing from the existing ones.
+    const allowedUrls = new Set(researchData.allowedUrls);
+    const allowedRefs = new Set(missingRequirements);
+    const newQuestions = [];
+
+    for (let index = 0; index < parsed.questions.length; index++) {
+      const raw =
+        parsed.questions[index] && typeof parsed.questions[index] === 'object'
+          ? parsed.questions[index]
+          : {};
+
+      // Only known fields are kept; id continues sequentially (q1,q2,q3 -> q4,q5).
+      const question = { id: `q${questions.length + newQuestions.length + 1}` };
+      for (const field of QUESTION_FIELDS) {
+        question[field] = raw[field];
+      }
+
+      const problems = [];
+      const validation = validateQuestion(question);
+      if (!validation.valid) problems.push(...validation.errors);
+
+      // sources must come only from the supplied research
+      if (Array.isArray(question.sources)) {
+        const unknownUrl = question.sources.find((url) => !allowedUrls.has(url));
+        if (unknownUrl) {
+          problems.push(`sources contains a URL not found in the supplied research: "${unknownUrl}"`);
+        }
+      }
+
+      // requirementRefs must reference only missing requirements (at least one)
+      if (Array.isArray(question.requirementRefs)) {
+        if (question.requirementRefs.length === 0) {
+          problems.push('requirementRefs must reference at least one missing requirement');
+        }
+        const unknownRef = question.requirementRefs.find(
+          (ref) => typeof ref !== 'string' || !ref.trim() || !allowedRefs.has(ref.trim())
+        );
+        if (unknownRef !== undefined) {
+          problems.push(`requirementRefs contains a reference not in missingRequirements: "${unknownRef}"`);
+        }
+      }
+
+      if (problems.length > 0) {
+        throw new LlmError(
+          'LLM_INVALID_STRUCTURE',
+          `The model returned an invalid gap-fill question ${question.id}.`,
+          502
+        );
+      }
+
+      newQuestions.push(question);
+    }
+
+    // 7. Never remove or modify existing questions — append only. A deterministic
+    //    quality guard drops a newly generated question whose text is identical to a
+    //    question already in the bank (or to an earlier new one), so a gap can never
+    //    be "filled" with a duplicate. Existing questions stay untouched, and the
+    //    dropped ids are reported instead of being discarded silently.
+    const seenTexts = new Set(
+      questions.map((question) => normalizeQuestionText(question?.question)).filter(Boolean)
+    );
+    const uniqueNewQuestions = [];
+    const droppedDuplicateQuestionIds = [];
+    for (const question of newQuestions) {
+      const text = normalizeQuestionText(question?.question);
+      if (text && seenTexts.has(text)) {
+        droppedDuplicateQuestionIds.push(question.id);
+        continue;
+      }
+      if (text) seenTexts.add(text);
+      uniqueNewQuestions.push(question);
+    }
+
+    // Gaps exist but nothing usable came back: let the next model try. The
+    // unchanged result travels with the error in case no model does better.
+    if (uniqueNewQuestions.length === 0) {
+      const error = new LlmError('LLM_NO_USABLE_ITEMS', 'The model returned no new usable questions for the gaps.', 502);
+      error.partial = { questions, coverage: checkCoverage({ requirements, questions }), droppedDuplicateQuestionIds };
+      throw error;
+    }
+
+    const combinedQuestions = [...questions, ...uniqueNewQuestions];
+    const updatedCoverage = checkCoverage({ requirements, questions: combinedQuestions });
+
+    return { questions: combinedQuestions, coverage: updatedCoverage, droppedDuplicateQuestionIds };
+  };
+
   // 4. Call Gemini with structured JSON output (isolated inside this service).
-  let text;
   try {
     const response = await generateContent({
       contents: buildPrompt({ requirements, missingRequirements, research: researchData }),
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
       client,
+      acceptOutput: parseOutput,
     });
-    text = response.text;
+    return response.value;
   } catch (error) {
+    // Every model answered, but none produced a usable new question: some gaps
+    // cannot be filled. Keep the existing questions and leave the gaps visible
+    // (the earlier behaviour) instead of failing the whole kit.
+    if (error?.code === 'LLM_NO_USABLE_OUTPUT' && error.lastOutputError?.partial) {
+      console.warn('Coverage gap filling added no questions; the gaps stay visible.', JSON.stringify({ missing: missingRequirements.length }));
+      return error.lastOutputError.partial;
+    }
     if (error instanceof LlmError) throw error;
     throw new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
   }
-
-  // 5. Empty, non-JSON, or wrong-shape responses.
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(toJsonText(text));
-  } catch (error) {
-    throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
-    throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
-  }
-
-  // 6. Validate each new question and assign ids continuing from the existing ones.
-  const allowedUrls = new Set(researchData.allowedUrls);
-  const allowedRefs = new Set(missingRequirements);
-  const newQuestions = [];
-
-  for (let index = 0; index < parsed.questions.length; index++) {
-    const raw =
-      parsed.questions[index] && typeof parsed.questions[index] === 'object'
-        ? parsed.questions[index]
-        : {};
-
-    // Only known fields are kept; id continues sequentially (q1,q2,q3 -> q4,q5).
-    const question = { id: `q${questions.length + newQuestions.length + 1}` };
-    for (const field of QUESTION_FIELDS) {
-      question[field] = raw[field];
-    }
-
-    const problems = [];
-    const validation = validateQuestion(question);
-    if (!validation.valid) problems.push(...validation.errors);
-
-    // sources must come only from the supplied research
-    if (Array.isArray(question.sources)) {
-      const unknownUrl = question.sources.find((url) => !allowedUrls.has(url));
-      if (unknownUrl) {
-        problems.push(`sources contains a URL not found in the supplied research: "${unknownUrl}"`);
-      }
-    }
-
-    // requirementRefs must reference only missing requirements (at least one)
-    if (Array.isArray(question.requirementRefs)) {
-      if (question.requirementRefs.length === 0) {
-        problems.push('requirementRefs must reference at least one missing requirement');
-      }
-      const unknownRef = question.requirementRefs.find(
-        (ref) => typeof ref !== 'string' || !ref.trim() || !allowedRefs.has(ref.trim())
-      );
-      if (unknownRef !== undefined) {
-        problems.push(`requirementRefs contains a reference not in missingRequirements: "${unknownRef}"`);
-      }
-    }
-
-    if (problems.length > 0) {
-      throw new LlmError(
-        'LLM_INVALID_STRUCTURE',
-        `The model returned an invalid gap-fill question ${question.id}.`,
-        502
-      );
-    }
-
-    newQuestions.push(question);
-  }
-
-  // 7. Never remove or modify existing questions — append only. A deterministic
-  //    quality guard drops a newly generated question whose text is identical to a
-  //    question already in the bank (or to an earlier new one), so a gap can never
-  //    be "filled" with a duplicate. Existing questions stay untouched, and the
-  //    dropped ids are reported instead of being discarded silently.
-  const seenTexts = new Set(
-    questions.map((question) => normalizeQuestionText(question?.question)).filter(Boolean)
-  );
-  const uniqueNewQuestions = [];
-  const droppedDuplicateQuestionIds = [];
-  for (const question of newQuestions) {
-    const text = normalizeQuestionText(question?.question);
-    if (text && seenTexts.has(text)) {
-      droppedDuplicateQuestionIds.push(question.id);
-      continue;
-    }
-    if (text) seenTexts.add(text);
-    uniqueNewQuestions.push(question);
-  }
-
-  const combinedQuestions = [...questions, ...uniqueNewQuestions];
-  const updatedCoverage = checkCoverage({ requirements, questions: combinedQuestions });
-
-  return { questions: combinedQuestions, coverage: updatedCoverage, droppedDuplicateQuestionIds };
 };
 
 module.exports = { fillCoverageGaps };

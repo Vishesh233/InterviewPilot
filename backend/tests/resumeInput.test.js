@@ -172,7 +172,7 @@ describe('resume file validation and text extraction', () => {
 describe('resume request normalization', () => {
   const baseBody = {
     jobRole: 'Backend Developer',
-    jobDescription: 'Backend role with Node.js.',
+    jobDescription: 'Backend role with Node.js. You will design REST APIs, model data in MongoDB and write automated tests.',
     companyUrl: 'https://example.com/',
     interviewDays: 5,
   };

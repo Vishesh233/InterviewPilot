@@ -58,7 +58,7 @@ const withServer = async (expressApp, run) => {
 describe('resume length: one limit, typed errors', () => {
   const baseBody = {
     jobRole: 'Backend Engineer',
-    jobDescription: 'Backend Engineer with Node.js and PostgreSQL.',
+    jobDescription: 'Backend Engineer with Node.js and PostgreSQL. You will design REST APIs and own production services.',
     companyUrl: 'https://example.com/',
     interviewDays: 3,
   };

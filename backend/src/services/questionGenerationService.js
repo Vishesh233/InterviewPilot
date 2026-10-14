@@ -113,7 +113,7 @@ const toJsonText = (raw) => {
     : withoutFences;
 };
 
-const buildPrompt = ({ requirements, requirementTexts, research }) => {
+const buildPrompt = ({ requirements, requirementTexts, research, category }) => {
   const researchSection =
     research.sources.length > 0
       ? research.sources
@@ -145,11 +145,16 @@ RULES:
 4. sources: use ONLY URLs from the COMPANY RESEARCH list; use [] when no source applies.
 5. Do NOT include an "id" field — ids are assigned by the service.
 6. For each question provide: why (interview relevance), expectedAnswerPoints (2-5 concrete points), followUps (0-3).
-Return JSON only.
+${category ? `7. Generate ONLY questions with category "${category}". Every question in the answer must use exactly this category.
+` : ''}Return JSON only.
 `.trim();
 };
 
-const generateQuestions = async ({ requirements, research, client } = {}) => {
+// `category` (optional) asks for questions of that one category only, and
+// `isUsable(questions)` (optional) lets a caller reject an answer that has no
+// question it can use (e.g. none in the section being regenerated), so the
+// next model is tried.
+const generateQuestions = async ({ requirements, research, client, category, isUsable } = {}) => {
   // 1. Missing GEMINI_API_KEY
   if (!client && !process.env.GEMINI_API_KEY) {
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
@@ -159,100 +164,115 @@ const generateQuestions = async ({ requirements, research, client } = {}) => {
   const validated = validateRequirements(requirements);
   const researchData = collectResearch(research);
 
-  // 3. Call Gemini with structured JSON output (isolated inside this service)
-  let text;
+  // Parses and validates one model answer. Throwing an LLM_INVALID_* /
+  // LLM_NO_USABLE_ITEMS error makes the shared adapter try the next model.
+  const parseOutput = (text) => {
+    // 5. Empty or non-JSON response
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(toJsonText(text));
+    } catch (error) {
+      throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
+      throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
+    }
+
+    // 6. Validate every question; assign deterministic ids; never invent references.
+    const questions = [];
+    const lowerRequirementTexts = validated.texts.map((text) => text.toLowerCase());
+    const allowedUrlSet = new Set(researchData.allowedUrls);
+
+    for (let index = 0; index < parsed.questions.length; index++) {
+      const raw =
+        parsed.questions[index] && typeof parsed.questions[index] === 'object'
+          ? parsed.questions[index]
+          : {};
+
+      // Keep only known fields and assign our own id — never trust a Gemini-made id.
+      const question = { id: `q${index + 1}` };
+      for (const field of QUESTION_FIELDS) {
+        question[field] = raw[field];
+      }
+
+      const problems = [];
+      const validation = validateQuestion(question);
+      if (!validation.valid) problems.push(...validation.errors);
+
+      // sources must come from the supplied research only
+      if (Array.isArray(question.sources)) {
+        const unknownUrl = question.sources.find((url) => !allowedUrlSet.has(url));
+        if (unknownUrl) {
+          problems.push(`sources contains a URL not found in the supplied research: "${unknownUrl}"`);
+        }
+      }
+
+      // requirementRefs must reference actual supplied requirements
+      if (Array.isArray(question.requirementRefs)) {
+        const unknownRef = question.requirementRefs.find((ref) => {
+          if (typeof ref !== 'string') return true;
+          const normalized = ref.trim().toLowerCase();
+          return (
+            !normalized ||
+            !lowerRequirementTexts.some((text) => normalized.includes(text) || text.includes(normalized))
+          );
+        });
+        if (unknownRef) {
+          problems.push(
+            `requirementRefs contains a reference not found in the supplied requirements: "${unknownRef}"`
+          );
+        }
+      }
+
+      // 7. Do not silently accept invalid questions: this answer is unusable.
+      if (problems.length > 0) {
+        throw new LlmError(
+          'LLM_INVALID_STRUCTURE',
+          `The model returned an invalid question at index ${index}.`,
+          502
+        );
+      }
+
+      questions.push(question);
+    }
+
+    if (questions.length === 0) {
+      throw new LlmError('LLM_NO_USABLE_ITEMS', 'The model returned no questions.', 502);
+    }
+    if (typeof isUsable === 'function' && !isUsable(questions)) {
+      throw new LlmError('LLM_NO_USABLE_ITEMS', category
+        ? `The model returned no usable "${category}" questions.`
+        : 'The model returned no usable questions.', 502);
+    }
+    return { questions };
+  };
+
+  // 3. Call Gemini with structured JSON output (isolated inside this service).
+  //    The answer is parsed and validated per model (acceptOutput), so an
+  //    unusable answer falls back to the next model instead of failing.
   try {
     const response = await generateContent({
       contents: buildPrompt({
         requirements,
         requirementTexts: validated.texts,
         research: researchData,
+        category,
       }),
       responseMimeType: 'application/json',
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
       client,
+      acceptOutput: parseOutput,
     });
-    text = response.text;
+    return response.value;
   } catch (error) {
     // 4. Provider errors are already sanitized by the shared LLM adapter.
     if (error instanceof LlmError) throw error;
     throw new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
   }
-
-  // 5. Empty or non-JSON response
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(toJsonText(text));
-  } catch (error) {
-    throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.questions)) {
-    throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
-  }
-
-  // 6. Validate every question; assign deterministic ids; never invent references.
-  const questions = [];
-  const lowerRequirementTexts = validated.texts.map((text) => text.toLowerCase());
-  const allowedUrlSet = new Set(researchData.allowedUrls);
-
-  for (let index = 0; index < parsed.questions.length; index++) {
-    const raw =
-      parsed.questions[index] && typeof parsed.questions[index] === 'object'
-        ? parsed.questions[index]
-        : {};
-
-    // Keep only known fields and assign our own id — never trust a Gemini-made id.
-    const question = { id: `q${index + 1}` };
-    for (const field of QUESTION_FIELDS) {
-      question[field] = raw[field];
-    }
-
-    const problems = [];
-    const validation = validateQuestion(question);
-    if (!validation.valid) problems.push(...validation.errors);
-
-    // sources must come from the supplied research only
-    if (Array.isArray(question.sources)) {
-      const unknownUrl = question.sources.find((url) => !allowedUrlSet.has(url));
-      if (unknownUrl) {
-        problems.push(`sources contains a URL not found in the supplied research: "${unknownUrl}"`);
-      }
-    }
-
-    // requirementRefs must reference actual supplied requirements
-    if (Array.isArray(question.requirementRefs)) {
-      const unknownRef = question.requirementRefs.find((ref) => {
-        if (typeof ref !== 'string') return true;
-        const normalized = ref.trim().toLowerCase();
-        return (
-          !normalized ||
-          !lowerRequirementTexts.some((text) => normalized.includes(text) || text.includes(normalized))
-        );
-      });
-      if (unknownRef) {
-        problems.push(
-          `requirementRefs contains a reference not found in the supplied requirements: "${unknownRef}"`
-        );
-      }
-    }
-
-    // 7. Do not silently accept invalid questions — fail with a clear error.
-    if (problems.length > 0) {
-      throw new LlmError(
-        'LLM_INVALID_STRUCTURE',
-        `The model returned an invalid question at index ${index}.`,
-        502
-      );
-    }
-
-    questions.push(question);
-  }
-
-  return { questions };
 };
 
 module.exports = { generateQuestions };

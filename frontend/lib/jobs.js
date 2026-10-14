@@ -30,6 +30,8 @@ const MESSAGES = {
   JOB_INTERRUPTED: 'The server restarted while this generation was running.',
   INSUFFICIENT_JOB_DESCRIPTION: 'The job description did not contain enough detail to extract requirements. Add more detail and start over.',
   NO_QUESTIONS_GENERATED: 'No usable interview questions were generated.',
+  REGENERATE_NO_USABLE_QUESTIONS: 'The AI models did not return any usable questions for this section, so nothing was changed. Please try again in a minute.',
+  LLM_NO_USABLE_OUTPUT: 'The AI models returned answers that could not be used. Please try again in a minute.',
   KIT_VALIDATION_FAILED: 'The generated kit did not pass validation, so it was not saved.',
   KIT_NOT_FOUND: 'This kit no longer exists.',
   LLM_THINKING_CONFIG_REJECTED: 'The AI provider rejected the server configuration.',

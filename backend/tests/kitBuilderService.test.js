@@ -536,7 +536,7 @@ describe('kit builder section regeneration', () => {
 
     await expectBuilderError(
       regenerateKitSection({ kit: buildKit(), category: 'technical', deps }),
-      'BUILDER_NO_REPLACEMENTS_GENERATED'
+      'REGENERATE_NO_USABLE_QUESTIONS'
     );
   });
 });

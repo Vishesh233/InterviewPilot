@@ -1,4 +1,9 @@
 const MAX_JOB_DESCRIPTION_LENGTH = 50_000;
+// Minimum job description length (trimmed characters) accepted by the HTTP API.
+// Shorter text cannot carry enough requirements to prepare for. The frontend
+// form (frontend/components/kit/NewKitForm.js) mirrors this value; keep both
+// in sync.
+const MIN_JOB_DESCRIPTION_LENGTH = 100;
 // A job role is a short display title, not free text like the JD.
 const MAX_JOB_ROLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 20_000;
@@ -36,6 +41,7 @@ const isPlainSafeObject = (value) => isPlainObject(value) && !hasUnsafeKeys(valu
 
 module.exports = {
   MAX_JOB_DESCRIPTION_LENGTH,
+  MIN_JOB_DESCRIPTION_LENGTH,
   MAX_JOB_ROLE_LENGTH,
   MAX_TEXT_LENGTH,
   isPlainObject,

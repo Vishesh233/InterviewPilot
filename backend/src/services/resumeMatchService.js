@@ -183,7 +183,55 @@ const analyzeResumeMatch = async ({ resumeText, requirements, client } = {}) => 
     throw new LlmError('LLM_NOT_CONFIGURED', 'The model provider is not configured.', 500);
   }
 
-  let text;
+  // Parses and validates one model answer. Throwing an LLM_INVALID_* /
+  // LLM_NO_USABLE_ITEMS error makes the shared adapter try the next model.
+  const parseOutput = (text) => {
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(toJsonText(text));
+    } catch (error) {
+      throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.matches)) {
+      throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
+    }
+
+    // Canonical lookup so a differently-cased or padded requirement still resolves
+    // to the exact extracted string (or is discarded).
+    const canonical = new Map(requirementTexts.map((value) => [value.toLowerCase(), value]));
+    const byRequirement = new Map();
+
+    for (const raw of parsed.matches) {
+      if (!raw || typeof raw !== 'object' || typeof raw.requirement !== 'string') continue;
+      const requirement = canonical.get(raw.requirement.trim().toLowerCase());
+      if (!requirement || byRequirement.has(requirement)) continue;
+
+      const evidence = sanitizeEvidence(raw.evidence, resumeText);
+      const claimed = MATCH_STATUSES.includes(raw.status) ? raw.status : 'missing';
+      // A match classification without grounded resume evidence is not a match.
+      const status = claimed === 'missing' || evidence === null ? 'missing' : claimed;
+      byRequirement.set(requirement, { requirement, status, evidence: status === 'missing' ? null : evidence });
+    }
+
+    const matches = requirementTexts.map(
+      (requirement) => byRequirement.get(requirement) || { requirement, status: 'missing', evidence: null }
+    );
+    const matchedRequirements = matches.filter((match) => match.status === 'matched').map((match) => match.requirement);
+    const partialRequirements = matches.filter((match) => match.status === 'partial').map((match) => match.requirement);
+    const missingRequirements = matches.filter((match) => match.status === 'missing').map((match) => match.requirement);
+
+    return {
+      matches,
+      matchedRequirements,
+      partialRequirements,
+      missingRequirements,
+      matchPercent: Math.round((matchedRequirements.length / requirementTexts.length) * 100),
+    };
+  };
+
   try {
     const response = await generateContent({
       contents: buildPrompt({
@@ -195,57 +243,13 @@ const analyzeResumeMatch = async ({ resumeText, requirements, client } = {}) => 
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
       client,
+      acceptOutput: parseOutput,
     });
-    text = response.text;
+    return response.value;
   } catch (error) {
     if (error instanceof LlmError) throw error;
     throw new LlmError('LLM_REQUEST_FAILED', 'The model request failed.', 502);
   }
-
-  if (typeof text !== 'string' || !text.trim()) {
-    throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(toJsonText(text));
-  } catch (error) {
-    throw new LlmError('LLM_INVALID_JSON', 'The model returned malformed or truncated JSON.', 502);
-  }
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.matches)) {
-    throw new LlmError('LLM_INVALID_STRUCTURE', 'The model returned an invalid structured response.', 502);
-  }
-
-  // Canonical lookup so a differently-cased or padded requirement still resolves
-  // to the exact extracted string (or is discarded).
-  const canonical = new Map(requirementTexts.map((value) => [value.toLowerCase(), value]));
-  const byRequirement = new Map();
-
-  for (const raw of parsed.matches) {
-    if (!raw || typeof raw !== 'object' || typeof raw.requirement !== 'string') continue;
-    const requirement = canonical.get(raw.requirement.trim().toLowerCase());
-    if (!requirement || byRequirement.has(requirement)) continue;
-
-    const evidence = sanitizeEvidence(raw.evidence, resumeText);
-    const claimed = MATCH_STATUSES.includes(raw.status) ? raw.status : 'missing';
-    // A match classification without grounded resume evidence is not a match.
-    const status = claimed === 'missing' || evidence === null ? 'missing' : claimed;
-    byRequirement.set(requirement, { requirement, status, evidence: status === 'missing' ? null : evidence });
-  }
-
-  const matches = requirementTexts.map(
-    (requirement) => byRequirement.get(requirement) || { requirement, status: 'missing', evidence: null }
-  );
-  const matchedRequirements = matches.filter((match) => match.status === 'matched').map((match) => match.requirement);
-  const partialRequirements = matches.filter((match) => match.status === 'partial').map((match) => match.requirement);
-  const missingRequirements = matches.filter((match) => match.status === 'missing').map((match) => match.requirement);
-
-  return {
-    matches,
-    matchedRequirements,
-    partialRequirements,
-    missingRequirements,
-    matchPercent: Math.round((matchedRequirements.length / requirementTexts.length) * 100),
-  };
 };
 
 module.exports = {

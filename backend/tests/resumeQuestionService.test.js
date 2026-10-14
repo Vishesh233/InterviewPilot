@@ -135,8 +135,8 @@ describe('resume question grounding', () => {
   });
 
   it('rejects an unusable model response', async () => {
-    await assert.rejects(() => call('not json'), (error) => error.code === 'LLM_INVALID_JSON');
-    await assert.rejects(() => call('{"questions": {}}'), (error) => error.code === 'LLM_INVALID_STRUCTURE');
-    await assert.rejects(() => call('  '), (error) => error.code === 'LLM_EMPTY_RESPONSE');
+    await assert.rejects(() => call('not json'), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_INVALID_JSON');
+    await assert.rejects(() => call('{"questions": {}}'), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_INVALID_STRUCTURE');
+    await assert.rejects(() => call('  '), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_EMPTY_RESPONSE');
   });
 });

@@ -544,7 +544,10 @@ const sanitizeLlmError = (error) => {
 // Shared post-conditions. These run regardless of provider, so a model response
 // is never trusted: it must be a non-empty, bounded string. Parsing and
 // application-level schema validation stay in the calling services.
-const assertUsableText = (text) => {
+// `allowEmpty`: a service with its own output check (acceptOutput) receives
+// empty text too, so an empty answer counts as bad_output and falls back.
+const assertUsableText = (text, { allowEmpty = false } = {}) => {
+  if (allowEmpty && typeof text === 'string' && !text.trim()) return { text };
   if (typeof text !== 'string' || !text.trim()) {
     throw new LlmError('LLM_EMPTY_RESPONSE', 'The model returned an empty response.', 502);
   }
@@ -693,6 +696,51 @@ const nextAttemptedIndex = (chain, index) => {
   return -1;
 };
 
+// Name the model that will really be attempted next; the models in between are
+// in cooldown and get their own "LLM model skipped" line.
+const logFallback = (chain, index, reason, stage) => {
+  const entry = chain[index];
+  const target = chain[nextAttemptedIndex(chain, index)];
+  const fallback = {
+    from: `${entry.provider}:${entry.model}`,
+    to: `${target.provider}:${target.model}`,
+    reason,
+    stage: stage || null,
+  };
+  console.warn('LLM fallback.', JSON.stringify(fallback));
+  emitLlmEvent({ type: 'fallback', ...fallback });
+};
+
+// Codes a service's output check (input.acceptOutput) raises when a response
+// arrived but cannot be used: empty, not JSON, wrong structure, or nothing left
+// after validation/filtering. Another model may well do better, so these move
+// on to the next model in the chain (no same-model retry).
+const BAD_OUTPUT_CODES = new Set(['LLM_EMPTY_RESPONSE', 'LLM_INVALID_JSON', 'LLM_INVALID_STRUCTURE', 'LLM_NO_USABLE_ITEMS']);
+
+const noUsableOutputError = (stage, cause) => {
+  const error = new LlmError(
+    'LLM_NO_USABLE_OUTPUT',
+    `Every AI model returned output that could not be used${stage ? ` for "${stage}"` : ''}. Please try again in a minute.`,
+    502
+  );
+  error.causeCode = cause?.code || null;
+  // The last unusable answer, for callers that can still degrade gracefully
+  // (an optional stage may carry its old "nothing added" result as `partial`).
+  error.lastOutputError = cause || null;
+  return error;
+};
+
+// Runs the service's output check. Returns { ok: true, value } or, for a
+// bad-output error, { ok: false, error }; any other error is re-thrown.
+const checkModelOutput = async (acceptOutput, text) => {
+  try {
+    return { ok: true, value: await acceptOutput(text) };
+  } catch (error) {
+    if (error instanceof LlmError && BAD_OUTPUT_CODES.has(error.code)) return { ok: false, error };
+    throw error;
+  }
+};
+
 const generateContent = async (rawInput = {}) => {
   const input = { ...rawInput, stage: rawInput.stage || llmStage.getStore() || null };
   const chain = buildModelChain(input);
@@ -726,14 +774,12 @@ const generateContent = async (rawInput = {}) => {
 
     for (let attempt = 1; ; attempt += 1) {
       const startedAt = Date.now();
+      let usable;
       try {
         const raw = entry.provider === 'gemini'
           ? await callGemini(entry, input)
           : await callOpenRouter(entry, input, state);
-        const usable = assertUsableText(raw);
-        logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
-        clearCooldown(entry);
-        return usable;
+        usable = assertUsableText(raw, { allowEmpty: typeof input.acceptOutput === 'function' });
       } catch (error) {
         let safeError = sanitizeLlmError(error);
         // A 400 while a thinking setting is configured is most likely the model
@@ -774,21 +820,44 @@ const generateContent = async (rawInput = {}) => {
             console.warn('LLM thinking setting rejected by fallback model; skipping it.', JSON.stringify(rejected));
             emitLlmEvent({ type: 'thinking_rejected', ...rejected });
           }
-          // Name the model that will really be attempted next; the models in
-          // between are in cooldown and get their own "LLM model skipped" line.
-          const target = chain[nextAttemptedIndex(chain, index)];
-          const fallback = {
-            from: `${entry.provider}:${entry.model}`,
-            to: `${target.provider}:${target.model}`,
-            reason: classification,
-            stage: input.stage || null,
-          };
-          console.warn('LLM fallback.', JSON.stringify(fallback));
-          emitLlmEvent({ type: 'fallback', ...fallback });
+          logFallback(chain, index, classification, input.stage);
           break;
         }
         throw safeError;
       }
+
+      // The provider answered. When the service supplied an output check, an
+      // answer it cannot use counts as "bad_output": logged with its reason,
+      // then the next model is tried; after the last model the call fails with
+      // LLM_NO_USABLE_OUTPUT.
+      if (typeof input.acceptOutput === 'function') {
+        const checked = await checkModelOutput(input.acceptOutput, usable.text);
+        if (!checked.ok) {
+          lastError = checked.error;
+          const line = {
+            provider: entry.provider,
+            model: entry.model,
+            stage: input.stage || null,
+            attempt,
+            classification: 'bad_output',
+            reason: checked.error.code,
+            detail: checked.error.message,
+            latencyMs: Date.now() - startedAt,
+            action: isLastModel ? 'give-up' : 'fallback',
+          };
+          console.warn('LLM output unusable.', JSON.stringify(line));
+          emitLlmEvent({ type: 'bad_output', ...line });
+          if (isLastModel) throw noUsableOutputError(input.stage, checked.error);
+          logFallback(chain, index, 'bad_output', input.stage);
+          break;
+        }
+        logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
+        clearCooldown(entry);
+        return { ...usable, value: checked.value };
+      }
+      logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
+      clearCooldown(entry);
+      return usable;
     }
   }
   // Only reachable when every remaining model was skipped, which cannot happen

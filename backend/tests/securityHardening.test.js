@@ -44,6 +44,18 @@ const expectCode = async (operation, code) => {
   });
 };
 
+// A service rejects an unusable model answer; with no model left to try the
+// call fails with LLM_NO_USABLE_OUTPUT, keeping the answer's problem as causeCode.
+const expectUnusable = async (operation, causeCode) => {
+  await assert.rejects(operation, (error) => {
+    assert.equal(error.code, 'LLM_NO_USABLE_OUTPUT');
+    assert.equal(error.causeCode, causeCode);
+    assert.equal(error.isPublic, true);
+    assert.match(error.message, /try again in a minute/);
+    return true;
+  });
+};
+
 const makeHttpResponse = ({ status = 200, headers = {}, body = '' } = {}) => {
   const response = new EventEmitter();
   response.statusCode = status;
@@ -542,7 +554,7 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
 
     // A well-formed response with unparsable content fails downstream and is not retried.
     const malformed = scriptedGeminiClient([{ text: '{"role":' }]);
-    await expectCode(
+    await expectUnusable(
       () => extractRequirements({ jobDescription: 'Node.js role', client: malformed }),
       'LLM_INVALID_JSON'
     );
@@ -730,21 +742,21 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
     // Structured output is provider-enforced, but the deterministic application
     // checks are still the authority: a model response that does not match the
     // required shape is rejected, never trusted.
-    await expectCode(
+    await expectUnusable(
       () => extractRequirements({
         jobDescription: 'Node.js role',
         client: fakeGeminiClient('{"role":"Engineer"}'),
       }),
       'LLM_INVALID_STRUCTURE'
     );
-    await expectCode(
+    await expectUnusable(
       () => extractRequirements({
         jobDescription: 'Node.js role',
         client: fakeGeminiClient('{"role":'),
       }),
       'LLM_INVALID_JSON'
     );
-    await expectCode(
+    await expectUnusable(
       () => generateQuestions({
         requirements: { role: 'Engineer', mustHaveSkills: ['Node.js'] },
         research: { sources: [] },
@@ -782,18 +794,18 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
       () => generateContent({ contents: 'x', client: fakeGeminiClient('x'.repeat(MAX_LLM_RESPONSE_LENGTH + 1)) }),
       'LLM_RESPONSE_TOO_LARGE'
     );
-    await expectCode(
+    await expectUnusable(
       () => extractRequirements({ jobDescription: 'Node.js role', client: fakeGeminiClient('{"role":') }),
       'LLM_INVALID_JSON'
     );
-    await expectCode(
+    await expectUnusable(
       () => extractRequirements({
         jobDescription: 'Node.js role',
         client: fakeGeminiClient(JSON.stringify({ role: 'Engineer' })),
       }),
       'LLM_INVALID_STRUCTURE'
     );
-    await expectCode(
+    await expectUnusable(
       () => generateQuestions({
         requirements: { role: 'Engineer', mustHaveSkills: ['Node.js'] },
         research: { sources: [] },
@@ -801,7 +813,7 @@ describe('LLM failure handling and untrusted-data boundaries', () => {
       }),
       'LLM_INVALID_STRUCTURE'
     );
-    await expectCode(
+    await expectUnusable(
       () => generateQuestions({
         requirements: { role: 'Engineer', mustHaveSkills: ['Node.js'] },
         research: { sources: [] },
@@ -1366,7 +1378,7 @@ describe('deterministic coverage treats role and seniority as metadata', () => {
 describe('explicit job role input', () => {
   const baseInput = () => ({
     jobRole: 'Backend Developer',
-    jobDescription: 'Backend team building Node.js services with MongoDB.',
+    jobDescription: 'Backend team building Node.js services with MongoDB. You will design REST APIs and keep them reliable.',
     companyUrl: 'https://example.com/',
     interviewDays: 3,
   });

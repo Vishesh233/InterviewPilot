@@ -46,7 +46,7 @@ const question = (id, ref, overrides = {}) => ({
 
 const kitInput = (overrides = {}) => ({
   jobRole: 'Frontend Developer',
-  jobDescription: 'Frontend role building React and TypeScript applications.',
+  jobDescription: 'Frontend role building React and TypeScript applications. You will ship accessible, well-tested UI features.',
   companyUrl: 'https://example.com/',
   interviewDays: 3,
   ...overrides,

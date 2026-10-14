@@ -21,8 +21,8 @@ const RESUME_MAX_TEXT_CHARS = 40_000;
 const RESUME_EXTENSIONS = ['pdf', 'txt', 'md'];
 
 // A JD shorter than this cannot carry enough requirements to prepare for.
-// Client-side feedback only; the backend's extraction gate still rejects thin
-// job descriptions after the model reads them.
+// Mirrors MIN_JOB_DESCRIPTION_LENGTH in backend/src/services/inputValidationService.js,
+// which the API enforces (400 JOB_DESCRIPTION_TOO_SHORT); keep both in sync.
 const MIN_JOB_DESCRIPTION_LENGTH = 100;
 // Field order on screen: the first invalid one receives focus.
 const FIELD_ORDER = ['jobRole', 'jobDescription', 'companyUrl', 'interviewDays'];

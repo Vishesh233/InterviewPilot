@@ -281,7 +281,9 @@ describe('gap fill stage duplicate guard', () => {
         client: fakeClient(modelResponse([gapQuestion({ requirementRefs: ['Node.js'] })])),
       }),
       (error) => {
-        assert.equal(error.code, 'LLM_INVALID_STRUCTURE');
+        // No model left to try: the chain fails, keeping the answer's problem.
+        assert.equal(error.code, 'LLM_NO_USABLE_OUTPUT');
+        assert.equal(error.causeCode, 'LLM_INVALID_STRUCTURE');
         assert.equal(error.isPublic, true);
         return true;
       }

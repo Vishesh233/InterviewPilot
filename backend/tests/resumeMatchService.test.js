@@ -111,9 +111,9 @@ describe('resume gap analysis grounding', () => {
 
   it('rejects an unusable model response instead of guessing', async () => {
     const rawCall = (text) => analyzeResumeMatch({ resumeText: RESUME_TEXT, requirements, client: fakeClient(text) });
-    await assert.rejects(() => rawCall('not json'), (error) => error.code === 'LLM_INVALID_JSON');
-    await assert.rejects(() => rawCall('{"matches": {}}'), (error) => error.code === 'LLM_INVALID_STRUCTURE');
-    await assert.rejects(() => rawCall('   '), (error) => error.code === 'LLM_EMPTY_RESPONSE');
+    await assert.rejects(() => rawCall('not json'), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_INVALID_JSON');
+    await assert.rejects(() => rawCall('{"matches": {}}'), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_INVALID_STRUCTURE');
+    await assert.rejects(() => rawCall('   '), (error) => error.code === 'LLM_NO_USABLE_OUTPUT' && error.causeCode === 'LLM_EMPTY_RESPONSE');
   });
 
   it('treats the resume as untrusted data in the prompt', async () => {

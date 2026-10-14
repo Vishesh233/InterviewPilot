@@ -1,7 +1,7 @@
 const { startJob, runnerFrom } = require('./generationJobsController');
 const { assertSafeUrl } = require('../services/urlSecurityService');
 const { normalizeResumeInput, ResumeInputError } = require('../services/resumeInputService');
-const { MAX_JOB_DESCRIPTION_LENGTH, MAX_JOB_ROLE_LENGTH, isBoundedString, isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
+const { MAX_JOB_DESCRIPTION_LENGTH, MIN_JOB_DESCRIPTION_LENGTH, MAX_JOB_ROLE_LENGTH, isBoundedString, isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
 
 const MAX_INTERVIEW_DAYS = 60;
 
@@ -43,6 +43,16 @@ const generateInterviewPrep = async (req, res, deps = {}) => {
         code: 'VALIDATION_ERROR',
         message:
           'jobRole must be a non-empty string, jobDescription must be a non-empty string, companyUrl must be a valid HTTP/HTTPS URL, and interviewDays must be an integer between 1 and 60.',
+      },
+    });
+  }
+
+  // Too short to extract requirements from (same minimum as the form).
+  if (jobDescription.trim().length < MIN_JOB_DESCRIPTION_LENGTH) {
+    return res.status(400).json({
+      error: {
+        code: 'JOB_DESCRIPTION_TOO_SHORT',
+        message: `The job description must be at least ${MIN_JOB_DESCRIPTION_LENGTH} characters so its requirements can be extracted.`,
       },
     });
   }

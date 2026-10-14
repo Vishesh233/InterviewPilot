@@ -10,6 +10,12 @@
 //     nice-to-have / bonus / preferred section moves to mustHaveSkills.
 //  3. Duplicates are removed: exact duplicates across lists (normalized), and
 //     interview signals or qualifications that only reword other requirements.
+//  4. Named-tool safety net: a well-known tool from namedTools.js that the job
+//     description names but no requirement stands for is added, as required,
+//     or as nice-to-have when the JD names it only in a nice-to-have section.
+//     Tools the JD does not name are never added.
+
+const { findNamedTools, stripNamedTools } = require('./namedTools');
 
 const REQUIREMENT_LIST_FIELDS = [
   'mustHaveSkills',
@@ -85,22 +91,26 @@ const formatYears = (match) => {
 // The lines of the job description that sit in a nice-to-have / bonus /
 // preferred section: the marker line itself plus the bullets (and blank
 // lines) right after it, up to the next non-bullet line.
-const optionalSectionText = (jobDescription) => {
-  if (typeof jobDescription !== 'string') return '';
-  const kept = [];
+const splitOptionalSections = (jobDescription) => {
+  const optional = [];
+  const required = [];
+  if (typeof jobDescription !== 'string') return { optional, required };
   let inSection = false;
   for (const line of jobDescription.split(/\r?\n/)) {
     if (OPTIONAL_MARKER.test(line)) {
       inSection = true;
-      kept.push(line);
+      optional.push(line);
     } else if (inSection && (BULLET_LINE.test(line) || !line.trim())) {
-      kept.push(line);
+      optional.push(line);
     } else {
       inSection = false;
+      required.push(line);
     }
   }
-  return kept.join('\n').toLowerCase();
+  return { optional, required };
 };
+
+const optionalSectionText = (jobDescription) => splitOptionalSections(jobDescription).optional.join('\n').toLowerCase();
 
 // Share of `stems` that also appear in `otherStems`.
 const overlap = (stems, otherStems) => {
@@ -114,6 +124,28 @@ const overlap = (stems, otherStems) => {
 // content words and at least 60 % of its own) is a rewording of it.
 const REWORD_MIN_SHARED = 2;
 const REWORD_MIN_RATIO = 0.6;
+
+// An existing requirement already stands for a tool when it names the tool and
+// says little else ("REST APIs", "WCAG 2.1 AA", "OAuth 2.0"). A longer one that
+// merely mentions it ("Meet WCAG 2.1 AA accessibility: semantic HTML, ...") is
+// not about that tool alone, so the tool still gets its own requirement.
+const MAX_OTHER_WORDS_FOR_TOOL_ITEM = 2;
+const standsForTool = (item, toolName) =>
+  findNamedTools(item).some((tool) => tool.name === toolName) &&
+  contentStems(stripNamedTools(item)).filter((word) => !/^\d+$/.test(word)).length <= MAX_OTHER_WORDS_FOR_TOOL_ITEM;
+
+// Adds (in place) every listed tool the JD names that no requirement stands for.
+const addMissingNamedTools = (lists, jobDescription) => {
+  if (typeof jobDescription !== 'string' || !jobDescription.trim()) return;
+  const requiredText = splitOptionalSections(jobDescription).required.join('\n');
+  const requiredTools = new Set(findNamedTools(requiredText).map((tool) => tool.name));
+  const items = REQUIREMENT_LIST_FIELDS.flatMap((field) => lists[field]);
+  for (const { name } of findNamedTools(jobDescription)) {
+    if (items.some((item) => standsForTool(item, name))) continue;
+    (requiredTools.has(name) ? lists.mustHaveSkills : lists.niceToHaveSkills).push(name);
+    items.push(name);
+  }
+};
 
 /**
  * @param {object} extracted extractRequirements()-shaped object
@@ -189,7 +221,10 @@ const refineRequirements = (extracted, { jobDescription } = {}) => {
     return !(stems.length > 0 && stems.every((value) => skillStems.has(value)));
   });
 
+  // 4. Named tools the model left out.
+  addMissingNamedTools(lists, jobDescription);
+
   return { role, seniority, yearsExperience, ...lists };
 };
 
-module.exports = { refineRequirements, optionalSectionText, contentStems, REQUIREMENT_LIST_FIELDS };
+module.exports = { refineRequirements, optionalSectionText, addMissingNamedTools, contentStems, REQUIREMENT_LIST_FIELDS };
