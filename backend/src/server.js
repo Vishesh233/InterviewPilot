@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const mongoose = require('mongoose');
 const connectDB = require('./config/database');
-const { isDbConnected } = require('./config/database');
+const { isDbConnected, dbErrorMeta, logIndexBuilds } = require('./config/database');
 const { rateLimiters } = require('./middleware/rateLimiters');
 const { parseTrustProxy, buildCorsOptions, readAllowedOrigins, HELMET_OPTIONS } = require('./config/http');
 const { installCrashHandlers, installShutdownHandlers } = require('./config/processLifecycle');
@@ -84,6 +84,7 @@ if (require.main === module) {
     if (corsOrigins.length === 0) console.warn('CORS_ORIGINS is not set: no browser origin can call this API.');
     console.log('Generation job configuration:', JSON.stringify(describeJobConfig()));
     await connectDB();
+    await logIndexBuilds();
 
     // Requeue jobs a previous process left unfinished (or fail the ones that
     // were already resumed too often). A recovery failure is logged and the
@@ -91,7 +92,7 @@ if (require.main === module) {
     try {
       await getDefaultJobRunner().recoverOnStartup();
     } catch (error) {
-      console.error('Generation job recovery failed.', JSON.stringify({ name: error?.name || null, code: error?.code ?? null }));
+      console.error('Generation job recovery failed.', dbErrorMeta(error));
     }
 
     const server = app.listen(PORT, () => {

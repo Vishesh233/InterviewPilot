@@ -64,7 +64,8 @@ release; `engines` allows Node 20+). Render sets `PORT` itself.
 | Name | Required | Example (no real secrets) | Purpose |
 | --- | --- | --- | --- |
 | `NODE_ENV` | yes | `production` | Production mode; with no `CORS_ORIGINS`, no browser origin is allowed |
-| `MONGODB_URI` | yes | `mongodb+srv://interviewpilot-api:<password>@cluster0.xxxxx.mongodb.net/interviewpilot?retryWrites=true&w=majority` | Atlas connection string |
+| `MONGODB_URI` | yes | `mongodb+srv://interviewpilot-api:<password>@cluster0.xxxxx.mongodb.net/interviewpilot?retryWrites=true&w=majority` | Atlas connection string; the database name goes in the path (without one the driver uses `test`, which the least-privilege user is refused) |
+| `MONGODB_DB_NAME` | no | `interviewpilot` | Database name; overrides the one in the `MONGODB_URI` path |
 | `JWT_SECRET` | yes | 64+ random characters (`openssl rand -hex 48`) | Signs session tokens |
 | `GEMINI_API_KEY` | yes | `<your Gemini API key>` | Primary LLM provider |
 | `CORS_ORIGINS` | yes | `https://interviewpilot.vercel.app` | Frontend origin(s) allowed to call the API, comma-separated, exact (no trailing slash) |
