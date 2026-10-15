@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageFrame, BackLink } from '@/components/layout/AppHeader';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -11,6 +11,9 @@ import { JobFailure } from '@/components/jobs/JobStatus';
 import { GenerationProgress } from '@/components/loading/GenerationProgress';
 import { Alert, Badge, Button, Card, LoadingState } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
+
+// How long the finished flight path stays on screen before the kit opens.
+const SUCCESS_HOLD_MS = 900;
 
 // The backend enforces the same rules again (extension + media type allowlist,
 // 2 MB decoded limit). This client check exists only for fast feedback.
@@ -113,10 +116,15 @@ export default function NewKitForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  // On success the progress card shows the plane landing (check-mark pop) for
+  // a moment before the kit opens.
+  const openKitTimer = useRef(null);
+  useEffect(() => () => clearTimeout(openKitTimer.current), []);
   const onFinished = useCallback((finished) => {
     if (finished.status === 'succeeded' && finished.kitId) {
       clearFormForJob(jobId);
-      router.push(`/kits/${encodeURIComponent(finished.kitId)}`);
+      clearTimeout(openKitTimer.current);
+      openKitTimer.current = setTimeout(() => router.push(`/kits/${encodeURIComponent(finished.kitId)}`), SUCCESS_HOLD_MS);
     }
   }, [jobId, router]);
   const { job, pollError, notFound } = useJobPolling({ token, jobId, epoch, onFinished });
