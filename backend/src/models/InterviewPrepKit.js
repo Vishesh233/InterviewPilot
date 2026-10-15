@@ -22,6 +22,9 @@ const interviewPrepKitSchema = new mongoose.Schema(
     // metadata + the grounded match analysis, never the raw resume text.
     resume: { type: mongoose.Schema.Types.Mixed },
     resume_analysis: { type: mongoose.Schema.Types.Mixed },
+    // Optional: AI feedback on practice answers, { [questionKey]: attempt[] }
+    // with the latest 5 attempts per question (answerFeedbackService.js).
+    answer_feedback: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }
 );

@@ -74,3 +74,7 @@ services:
         sync: false
       - key: RATE_LIMIT_JOB_POLL_WINDOW_MS
         sync: false
+      - key: RATE_LIMIT_FEEDBACK_MAX
+        sync: false
+      - key: RATE_LIMIT_FEEDBACK_WINDOW_MS
+        sync: false

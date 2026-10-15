@@ -24,6 +24,10 @@ const RATE_LIMIT_DEFAULTS = Object.freeze({
   // separate limit allows two jobs polled at full speed at the same time.
   RATE_LIMIT_JOB_POLL_MAX: 1200,
   RATE_LIMIT_JOB_POLL_WINDOW_MS: 15 * MINUTE_MS,
+  // AI answer feedback jobs, per user, separate from job creation. Only
+  // accepted requests count (a too-short answer costs nothing).
+  RATE_LIMIT_FEEDBACK_MAX: 20,
+  RATE_LIMIT_FEEDBACK_WINDOW_MS: 60 * MINUTE_MS,
 });
 
 const readRateLimitConfig = (env = process.env) => {
@@ -96,6 +100,12 @@ const createRateLimiters = (env = process.env) => {
     jobCreate: limiter({
       max: config.RATE_LIMIT_JOB_CREATE_MAX,
       windowMs: config.RATE_LIMIT_JOB_CREATE_WINDOW_MS,
+      keyGenerator: userKey,
+      skipFailedRequests: true,
+    }),
+    answerFeedback: limiter({
+      max: config.RATE_LIMIT_FEEDBACK_MAX,
+      windowMs: config.RATE_LIMIT_FEEDBACK_WINDOW_MS,
       keyGenerator: userKey,
       skipFailedRequests: true,
     }),

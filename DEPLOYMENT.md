@@ -98,7 +98,7 @@ release; `engines` allows Node 20+). Render sets `PORT` itself.
 | `JOB_CONCURRENCY` | no | `2` | Generation jobs running at once |
 | `JOB_TIMEOUT_MS` | no | `900000` | Limit for one generation run |
 | `JOB_RESUME_DELAYS_MS` | no | `20000,60000` | Waits before automatic resumes |
-| `RATE_LIMIT_*` (8 vars) | no | defaults: auth 10 / 15 min, job creation 15 / hour, API 300 / 15 min, job polling 1200 / 15 min | See `backend/.env.example` |
+| `RATE_LIMIT_*` (10 vars) | no | defaults: auth 10 / 15 min, job creation 15 / hour, API 300 / 15 min, job polling 1200 / 15 min, answer feedback 20 / hour | See `backend/.env.example` |
 
 ### Model order (recommendation)
 

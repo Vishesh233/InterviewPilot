@@ -51,6 +51,7 @@ The validated output of every finished stage is stored as a checkpoint on the jo
   | Creating jobs: `POST /api/interview-prep`, `/api/kits/:id/gaps`, `/api/kits/:id/regenerate` (shared budget; rejected requests do not count) | 15 / hour | user | `RATE_LIMIT_JOB_CREATE_MAX`, `RATE_LIMIT_JOB_CREATE_WINDOW_MS` |
   | Everything under `/api` (baseline) | 300 / 15 min | IP | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW_MS` |
   | Job polling `GET /api/jobs/:id` (instead of the baseline) | 1200 / 15 min | user | `RATE_LIMIT_JOB_POLL_MAX`, `RATE_LIMIT_JOB_POLL_WINDOW_MS` |
+  | AI answer feedback `POST /api/kits/:id/questions/:questionId/feedback` (rejected requests do not count) | 20 / hour | user | `RATE_LIMIT_FEEDBACK_MAX`, `RATE_LIMIT_FEEDBACK_WINDOW_MS` |
 
   Job polling is exempt from the baseline because the UI polls every 2 s (5 s after the first minute): one job alone can reach about 450 requests per 15 minutes. It has its own per-user limit, sized for two jobs polled at full speed. `GET /api/health` is not rate limited.
 - **`TRUST_PROXY`** (default off) sets Express `trust proxy`, which decides the client IP for the per-IP limits. Behind a proxy set it to the number of proxy hops in front of the API (for example `1` on Render). Left off behind a proxy, all clients share one IP and one limit.
@@ -67,6 +68,14 @@ The validated output of every finished stage is stored as a checkpoint on the jo
 - **Named-tool safety net** (`namedTools.js`, a curated, extendable list): a well-known technology, tool or standard the JD names (case-insensitive, word boundaries, aliases such as RTL → React Testing Library, CWV → Core Web Vitals, Postgres → PostgreSQL) that no requirement stands for is added, as required, or as nice-to-have when the JD names it only in a nice-to-have / bonus / preferred section. Tools the JD does not name are never added. Common-word names (Express, REST, ARIA, ...) match only in their own capitalization.
 - **Unusable model output falls back.** Every LLM stage validates the answer per model. An answer that is empty, not JSON, fails schema validation or leaves nothing usable after filtering (for a section regenerate: no usable question of that section) is logged as `LLM output unusable.` (`bad_output`, with stage and reason) and the next model is tried (no same-model retry). Only when the whole chain produced nothing usable does the stage fail, with `LLM_NO_USABLE_OUTPUT` (`REGENERATE_NO_USABLE_QUESTIONS` for a section regenerate) and a "try again in a minute" message. Gap filling and resume questions are optional additions: if no model adds anything usable, the kit keeps its questions (gaps stay visible).
 - LLM log lines carry the real pipeline/job stage, and an `LLM fallback.` line names the model that is actually tried next (models skipped for cooldown get their own `LLM model skipped.` line).
+
+## AI answer feedback
+
+`POST /api/kits/:id/questions/:questionId/feedback` with `{ answer, followUpQuestion? }` (authenticated; another user's kit or an unknown question is a 404) grades a practice answer as a background job (`type: "answerFeedback"`, polled through `GET /api/jobs/:id`). The trimmed answer must be 40–4000 characters, otherwise `400 ANSWER_TOO_SHORT` / `ANSWER_TOO_LONG`. `followUpQuestion` may only be one of the question's own follow-ups or a follow-up suggested by stored feedback (`400 FOLLOW_UP_NOT_FOUND` otherwise). One feedback job per kit runs at a time (`409 JOB_ALREADY_RUNNING`).
+
+- The prompt gets the question, its answer outline, the requirements it covers, the role and seniority, and the answer inside a delimited data block; the answer is treated as data, never as instructions.
+- Output: `score` (integer 1–10), `verdict` (`strong | solid | needs_work | off_track`; `off_track` must score 3 or lower), `strengths` and `gaps` (1–3 items, at most 20 words each), `improvedAnswer` (80–160 words), `followUp` (one question). Output outside these limits is unusable and the next model is tried; when every model fails the job fails with `ANSWER_FEEDBACK_FAILED` and a "try again in a minute" message.
+- The latest 5 attempts per question are stored on the kit as `answer_feedback: { [questionId]: [{ id, answer, followUpQuestion?, feedback, modelUsed, createdAt }] }` (oldest first) and returned by `GET /api/kits/:id`; the finished job's `summary` holds `{ questionId, attempt }`. Kits without the field are unchanged, and `GET /api/kits` leaves it out.
 
 ## Coverage gap questions
 

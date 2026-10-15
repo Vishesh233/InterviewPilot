@@ -1,13 +1,15 @@
 const mongoose = require('mongoose');
 
-const JOB_TYPES = ['kit', 'gapQuestions', 'regenerate'];
+const JOB_TYPES = ['kit', 'gapQuestions', 'regenerate', 'answerFeedback'];
 const JOB_STATUSES = ['queued', 'running', 'retrying', 'succeeded', 'failed'];
 const ACTIVE_JOB_STATUSES = ['queued', 'running', 'retrying'];
 const FINISHED_JOB_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-// One background generation (a new kit, gap questions, or a section
-// regeneration). `input` holds only what the pipeline needs: never a resume's
-// text, a key, or a token. `checkpoints` holds the validated output of every
+// One background generation (a new kit, gap questions, a section
+// regeneration, or feedback on a practice answer). `input` holds only what the
+// pipeline needs: never a resume's text, a key, or a token. A feedback job
+// holds the user's answer, which is also stored on their kit.
+// `checkpoints` holds the validated output of every
 // finished stage, keyed by stage name, so a resumed job skips that work.
 const generationJobSchema = new mongoose.Schema(
   {

@@ -14,6 +14,7 @@ const {
   setKitQuestionPinned,
   regenerateKitSection,
   generateKitGapQuestions,
+  requestAnswerFeedback,
 } = require('../controllers/interviewPrepKitBuilderController');
 const {
   getKitPractice,
@@ -39,6 +40,9 @@ router.post('/api/kits/:id/regenerate', requireAuth, rateLimiters.jobCreate, reg
 // Coverage gap questions. The literal /gaps path is declared alongside the other
 // literal kit routes, so it can never be parsed as a question id.
 router.post('/api/kits/:id/gaps', requireAuth, rateLimiters.jobCreate, generateKitGapQuestions);
+
+// AI feedback on a practice answer (background job, own per-user limit).
+router.post('/api/kits/:id/questions/:questionId/feedback', requireAuth, rateLimiters.answerFeedback, requestAnswerFeedback);
 
 // Practice Mode routes.
 router.get('/api/kits/:id/practice', requireAuth, getKitPractice);

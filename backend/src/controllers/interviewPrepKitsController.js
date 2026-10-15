@@ -7,6 +7,7 @@ const { assertPublicKitUrls } = require('../services/pipelineKitService');
 const { isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
 const { checkCoverage } = require('../services/coverageService');
 const { cleanStoredCompanyName } = require('../services/companyName');
+const { withAnswerFeedbackResponse } = require('../services/answerFeedbackService');
 
 const KIT_FIELDS = [
   'source',
@@ -34,8 +35,10 @@ const withCleanCompanyName = (kit) => {
 };
 
 // Normalize outgoing kit response: ensures builder metadata and practice defaults are present.
+// answer_feedback (practice-answer history), when the kit has any, is keyed by
+// question id; kits without it (older kits, the list view) leave it out.
 const toKitResponse = (kit) =>
-  withCleanCompanyName(practiceService.withPracticeDefaults(kitBuilderService.withBuilderMetadata(kit)));
+  withAnswerFeedbackResponse(withCleanCompanyName(practiceService.withPracticeDefaults(kitBuilderService.withBuilderMetadata(kit))));
 
 // The request body IS the kit. Never trust a client-supplied owner.
 const kitFromBody = (body) => {
@@ -111,7 +114,8 @@ const createKit = async (req, res) => {
 // GET /api/kits
 const listKits = async (req, res) => {
   try {
-    const kits = await InterviewPrepKit.find({ userId: req.userId }).sort({ createdAt: -1 });
+    // The answer-feedback history is only needed on the kit page; leave it out here.
+    const kits = await InterviewPrepKit.find({ userId: req.userId }, { answer_feedback: 0 }).sort({ createdAt: -1 });
     return res.json(Array.isArray(kits) ? kits.map((kit) => toKitResponse(kit)) : kits);
   } catch (error) {
     console.error(error);

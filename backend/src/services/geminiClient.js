@@ -853,11 +853,11 @@ const generateContent = async (rawInput = {}) => {
         }
         logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
         clearCooldown(entry);
-        return { ...usable, value: checked.value };
+        return { ...usable, value: checked.value, modelUsed: entryKey(entry) };
       }
       logAttempt({ entry, stage: input.stage, attempt, classification: 'success', startedAt, action: 'return' });
       clearCooldown(entry);
-      return usable;
+      return { ...usable, modelUsed: entryKey(entry) };
     }
   }
   // Only reachable when every remaining model was skipped, which cannot happen

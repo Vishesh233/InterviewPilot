@@ -11,6 +11,7 @@ const interviewPrepPipelineService = require('./interviewPrepPipelineService');
 const kitRegenerationService = require('./kitRegenerationService');
 const kitGapQuestionService = require('./kitGapQuestionService');
 const kitBuilderService = require('./kitBuilderService');
+const answerFeedbackService = require('./answerFeedbackService');
 const { validateKitStructure } = require('./kitStructureValidator');
 const { kitFromPipeline, prepareKitForStorage } = require('./pipelineKitService');
 const { runCheckpointedStage } = require('./stageCheckpoint');
@@ -18,6 +19,7 @@ const { JobError } = require('./generationJobService');
 
 const { KIT_PIPELINE_STAGES: S } = interviewPrepPipelineService;
 const SAVE_STAGE = 'Saving kit';
+const SAVE_FEEDBACK_STAGE = 'Saving feedback';
 
 const hasSavedKit = (value) => Boolean(value) && typeof value.kitId === 'string' && value.kitId.length > 0;
 
@@ -133,13 +135,57 @@ const createJobHandlers = ({ pipelineDeps = {}, serviceDeps = {}, kitModel = Int
     },
   };
 
+  // Grades one practice answer, then appends the attempt to the question's
+  // history on the kit, keeping only the latest MAX_FEEDBACK_HISTORY. The
+  // update touches answer_feedback only, so it cannot race a kit edit.
+  const answerFeedbackHandler = {
+    stages: () => [answerFeedbackService.FEEDBACK_STAGE, SAVE_FEEDBACK_STAGE],
+    run: async ({ job, context }) => {
+      const saved = context.checkpoints?.[SAVE_FEEDBACK_STAGE];
+      if (saved?.summary?.attempt) {
+        await context.onStage(SAVE_FEEDBACK_STAGE, { fromCheckpoint: true });
+        return saved;
+      }
+      const kit = await loadOwnedKit(job, answerFeedbackService.FEEDBACK_STAGE);
+      const { questionId, answer, followUpQuestion } = job.input;
+      let feedbackContext;
+      try {
+        feedbackContext = answerFeedbackService.prepareAnswerFeedback({ kit, questionId, answer, followUpQuestion });
+      } catch (error) {
+        if (error instanceof kitBuilderService.KitBuilderError) {
+          throw new JobError(error.code, error.message, { stage: answerFeedbackService.FEEDBACK_STAGE, status: error.status });
+        }
+        throw error;
+      }
+      const graded = await runCheckpointedStage(context, answerFeedbackService.FEEDBACK_STAGE, {
+        isValid: (value) => answerFeedbackService.isValidFeedback(value?.feedback),
+        run: () => answerFeedbackService.generateAnswerFeedback({ context: feedbackContext, client: serviceDeps.feedbackClient }),
+      });
+      return runCheckpointedStage(context, SAVE_FEEDBACK_STAGE, {
+        isValid: (value) => Boolean(value?.summary?.attempt),
+        run: async () => {
+          const attempt = answerFeedbackService.buildAttempt({ context: feedbackContext, ...graded });
+          const path = `answer_feedback.${answerFeedbackService.feedbackKeyFor(feedbackContext.questionId)}`;
+          const updated = await kitModel.findOneAndUpdate(
+            { _id: job.kitId, userId: job.userId },
+            { $push: { [path]: { $each: [attempt], $slice: -answerFeedbackService.MAX_FEEDBACK_HISTORY } } },
+            { returnDocument: 'after' }
+          );
+          if (!updated) throw new JobError('KIT_NOT_FOUND', 'The kit no longer exists.', { stage: SAVE_FEEDBACK_STAGE, status: 404 });
+          return { kitId: String(job.kitId), summary: { questionId: feedbackContext.questionId, attempt } };
+        },
+      });
+    },
+  };
+
   return {
     kit: kitHandler,
     gapQuestions: gapQuestionsHandler,
     regenerate: regenerateHandler,
+    answerFeedback: answerFeedbackHandler,
   };
 };
 
 const defaultHandlers = createJobHandlers();
 
-module.exports = { createJobHandlers, defaultHandlers, SAVE_STAGE };
+module.exports = { createJobHandlers, defaultHandlers, SAVE_STAGE, SAVE_FEEDBACK_STAGE };

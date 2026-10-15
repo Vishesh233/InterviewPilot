@@ -10,6 +10,7 @@ const InterviewPrepKit = require('../models/InterviewPrepKit');
 const kitBuilderService = require('../services/kitBuilderService');
 const kitRegenerationService = require('../services/kitRegenerationService');
 const kitGapQuestionService = require('../services/kitGapQuestionService');
+const answerFeedbackService = require('../services/answerFeedbackService');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const { hasUnsafeKeys } = require('../services/inputValidationService');
 const { startJob, runnerFrom } = require('./generationJobsController');
@@ -90,7 +91,7 @@ const applyAndPersist = async (req, res, mutate) => {
       return validationResponse(res, validation);
     }
     const updated = await persistKit(req, result.kit);
-    return res.json(kitBuilderService.withBuilderMetadata(updated));
+    return res.json(answerFeedbackService.withAnswerFeedbackResponse(kitBuilderService.withBuilderMetadata(updated)));
   } catch (error) {
     return respondWithBuilderError(res, error);
   }
@@ -165,7 +166,37 @@ const generateKitGapQuestions = async (req, res, deps) => {
   });
 };
 
+// POST /api/kits/:id/questions/:questionId/feedback — AI feedback on a practice
+// answer. Ownership, the question and the answer length are checked
+// synchronously (404 / 400); the grading runs as a background job: 202 { jobId }.
+const requestAnswerFeedback = async (req, res, deps) => {
+  let prepared;
+  try {
+    const body = bodyOf(req);
+    const kit = await loadOwnedKit(req);
+    prepared = answerFeedbackService.prepareAnswerFeedback({
+      kit,
+      questionId: req.params.questionId,
+      answer: body.answer,
+      followUpQuestion: body.followUpQuestion,
+    });
+  } catch (error) {
+    return respondWithBuilderError(res, error);
+  }
+  return startJob(res, runnerFrom(deps), {
+    userId: req.userId,
+    type: 'answerFeedback',
+    kitId: req.params.id,
+    input: {
+      questionId: prepared.questionId,
+      answer: prepared.answer,
+      ...(prepared.followUpQuestion ? { followUpQuestion: prepared.followUpQuestion } : {}),
+    },
+  });
+};
+
 module.exports = {
+  requestAnswerFeedback,
   updateKitQuestion,
   reorderKitQuestions,
   setKitQuestionPinned,
