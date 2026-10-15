@@ -12,6 +12,7 @@ const authRoutes = require('./routes/authRoutes');
 const interviewPrepRoutes = require('./routes/interviewPrepRoutes');
 const interviewPrepKitsRoutes = require('./routes/interviewPrepKitsRoutes');
 const generationJobRoutes = require('./routes/generationJobRoutes');
+const mockInterviewRoutes = require('./routes/mockInterviewRoutes');
 const { RESUME_REQUEST_JSON_LIMIT_BYTES } = require('./services/resumeTextExtractor');
 const { describeLlmConfig } = require('./services/geminiClient');
 const { describeJobConfig, getDefaultJobRunner } = require('./services/generationJobService');
@@ -52,6 +53,7 @@ app.use('/api/auth', authRoutes);
 app.use(interviewPrepRoutes);
 app.use(interviewPrepKitsRoutes);
 app.use(generationJobRoutes);
+app.use(mockInterviewRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Resource not found.' } });

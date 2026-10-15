@@ -29,7 +29,7 @@ The kit gains two optional sections — `resume` (file metadata only) and `resum
 
 ## Background generation jobs
 
-Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/gaps`), section regeneration (`POST /api/kits/:id/regenerate`) and answer feedback (`POST /api/kits/:id/questions/:questionId/feedback`, see below) run as background jobs, because a generation can take minutes, longer than a request should stay open (the local-development `/api/proxy` rewrite cuts requests at 30 s). Each endpoint still validates its input synchronously (bad input → 400; no gaps / nothing to regenerate → 409), then answers `202 { jobId }`. A second request of the same type for the same user (and kit) while one is active gets `409 JOB_ALREADY_RUNNING` with the existing `jobId`.
+Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/gaps`), section regeneration (`POST /api/kits/:id/regenerate`) answer feedback (`POST /api/kits/:id/questions/:questionId/feedback`) and mock interview turns and reports (see below) run as background jobs, because a generation can take minutes, longer than a request should stay open (the local-development `/api/proxy` rewrite cuts requests at 30 s). Each endpoint still validates its input synchronously (bad input → 400; no gaps / nothing to regenerate → 409), then answers `202 { jobId }`. A second request of the same type for the same user (and kit) while one is active gets `409 JOB_ALREADY_RUNNING` with the existing `jobId`.
 
 - `GET /api/jobs/:id` (owner only, otherwise 404) returns `type, status (queued | running | retrying | succeeded | failed), stage, stageIndex, stageCount, kitId, error { code, message, stage }, resumeCount, nextRetryAt, canResume, modelsUsed, createdAt, updatedAt`.
 - `POST /api/jobs/:id/resume` requeues an owned `failed` job that has checkpoints from its failed stage (409 otherwise).
@@ -52,6 +52,8 @@ The validated output of every finished stage is stored as a checkpoint on the jo
   | Everything under `/api` (baseline) | 300 / 15 min | IP | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW_MS` |
   | Job polling `GET /api/jobs/:id` (instead of the baseline) | 1200 / 15 min | user | `RATE_LIMIT_JOB_POLL_MAX`, `RATE_LIMIT_JOB_POLL_WINDOW_MS` |
   | AI answer feedback `POST /api/kits/:id/questions/:questionId/feedback` (rejected requests do not count) | 20 / hour | user | `RATE_LIMIT_FEEDBACK_MAX`, `RATE_LIMIT_FEEDBACK_WINDOW_MS` |
+  | Starting a mock interview `POST /api/kits/:id/mock-interviews` (rejected requests do not count) | 5 / day | user | `RATE_LIMIT_MOCK_CREATE_MAX`, `RATE_LIMIT_MOCK_CREATE_WINDOW_MS` |
+  | Mock interview answers and report retries `POST /api/mock-interviews/:sid/answer`, `/report` (rejected requests do not count) | 30 / hour | user | `RATE_LIMIT_MOCK_TURN_MAX`, `RATE_LIMIT_MOCK_TURN_WINDOW_MS` |
 
   Job polling is exempt from the baseline because the UI polls every 2 s (5 s after the first minute): one job alone can reach about 450 requests per 15 minutes. It has its own per-user limit, sized for two jobs polled at full speed. `GET /api/health` is not rate limited.
 - **`TRUST_PROXY`** (default off) sets Express `trust proxy`, which decides the client IP for the per-IP limits. Behind a proxy set it to the number of proxy hops in front of the API (for example `1` on Render). Left off behind a proxy, all clients share one IP and one limit.
@@ -76,6 +78,24 @@ The validated output of every finished stage is stored as a checkpoint on the jo
 - The prompt gets the question, its answer outline, the requirements it covers, the role and seniority, and the answer inside a delimited data block; the answer is treated as data, never as instructions.
 - The model returns `onTopic` (boolean) and `score` (integer 1–10); the server derives `verdict`: `onTopic: false` → `off_track` with the score capped at 3, otherwise 8–10 `strong`, 6–7 `solid`, 1–5 `needs_work`. Attempts stored before this rule keep their saved verdict. Also `strengths` (0–3 items, empty when there are none) and `gaps` (1–3 items), at most 20 words each, `improvedAnswer` (80–160 words), `followUp` (one question). Output outside these limits is unusable and the next model is tried; when every model fails the job fails with `ANSWER_FEEDBACK_FAILED` and a "try again in a minute" message.
 - The latest 5 attempts per question are stored on the kit as `answer_feedback: { [questionId]: [{ id, answer, followUpQuestion?, feedback, modelUsed, createdAt }] }` (oldest first) and returned by `GET /api/kits/:id`; the finished job's `summary` holds `{ questionId, attempt }`. Kits without the field are unchanged, and `GET /api/kits` leaves it out.
+
+## Mock interviews
+
+A multi-turn AI interviewer grounded in one kit (`MockInterview` model, `mockInterviewService.js`). Every route is authenticated and owner-only: another user's kit or session is a 404.
+
+| Endpoint | Result |
+| --- | --- |
+| `POST /api/kits/:id/mock-interviews` `{ length: 3–5 }` | `201 { session }` with the first question; no LLM call. `400 MOCK_INVALID_LENGTH`, `422 MOCK_NOT_ENOUGH_QUESTIONS`, `409 MOCK_ALREADY_ACTIVE` (one active session per user; `details.sessionId` is the active one) |
+| `POST /api/mock-interviews/:sid/answer` `{ answer }` | `202 { jobId }`, job type `mockTurn`. The answer is checked like answer feedback (`ANSWER_TOO_SHORT` / `ANSWER_TOO_LONG`); `409 MOCK_NOT_ACTIVE` once the session has ended |
+| `GET /api/mock-interviews/:sid` | `{ session }`: `status`, `plan`, `turns`, `currentQuestion` (`turnIndex, kind, questionId, questionText, number, of`) while active, `report` / `reportError` when completed |
+| `GET /api/kits/:id/mock-interviews` | `{ sessions }`: the latest 10 as `{ id, status, length, overallScore, createdAt }` |
+| `POST /api/mock-interviews/:sid/abandon` | `{ session }` with `status: "abandoned"`; `409 MOCK_NOT_ACTIVE` if it already ended |
+| `POST /api/mock-interviews/:sid/report` | Retries a missing report: `202 { jobId }`, job type `mockReport`; `409 MOCK_REPORT_NOT_NEEDED` unless the session is completed without a report |
+
+- **Question plan (deterministic).** Categories are mixed round-robin (technical, role_specific, behavioral, resume, company; categories with weak questions first). Within a category, questions whose flashcards are unrated, rated 1–2 or not covered come first, then kit order. No question repeats.
+- **Turns.** Each answer is graded by the answer-feedback grader against that question's outline and requirements (the answer is untrusted data, same prompt rules), and the turn stores `score, verdict, onTopic, strengths, gaps, improvedAnswer`. A main question gets at most one follow-up, only when the answer is on-topic and scores 4–8. The follow-up text is the grader's `followUp`, and it must be one question of at most 30 words ending with "?" with no instructions. Otherwise the turn records `followUpSkipped: "FOLLOW_UP_INVALID"` (when the text was rejected) and the next main question is asked.
+- **Report.** After the last turn a second LLM step writes `summary` (≤ 60 words), `topicResults` (`{ topic, score, note ≤ 20 words }`, topics copied from this kit's requirements and categories of the asked questions) and `practiceNext` (up to 3 `{ questionId, reason ≤ 15 words }` with real kit question ids). It sees the graded results, never the raw answers. `overallScore` is the rounded mean of the turn scores, computed on the server. Invalid output falls back to the next model. When every model fails, the session still completes with `report: null` and `reportError.code: "MOCK_REPORT_UNAVAILABLE"`, and `POST .../report` retries it.
+- **Inactivity.** An active session with no activity for 24 hours is marked `abandoned` (`abandonedReason: "inactive"`) the next time the user's sessions are read or written. This is checked on access rather than by a timer, because the API is one process that may sleep.
 
 ## Coverage gap questions
 

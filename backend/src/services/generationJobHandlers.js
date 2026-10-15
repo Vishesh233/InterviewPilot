@@ -12,20 +12,23 @@ const kitRegenerationService = require('./kitRegenerationService');
 const kitGapQuestionService = require('./kitGapQuestionService');
 const kitBuilderService = require('./kitBuilderService');
 const answerFeedbackService = require('./answerFeedbackService');
+const mockInterviewService = require('./mockInterviewService');
 const { validateKitStructure } = require('./kitStructureValidator');
 const { kitFromPipeline, prepareKitForStorage } = require('./pipelineKitService');
 const { runCheckpointedStage } = require('./stageCheckpoint');
 const { JobError } = require('./generationJobService');
+const { isPlainObject } = require('./inputValidationService');
 
 const { KIT_PIPELINE_STAGES: S } = interviewPrepPipelineService;
 const SAVE_STAGE = 'Saving kit';
 const SAVE_FEEDBACK_STAGE = 'Saving feedback';
+const SAVE_REPORT_STAGE = 'Saving mock report';
 
 const hasSavedKit = (value) => Boolean(value) && typeof value.kitId === 'string' && value.kitId.length > 0;
 
 const KIT_STAGES = [S.EXTRACTION, S.RESEARCH, S.COMPANY_BRIEF, S.GENERATION, S.COVERAGE, S.GAP_FILL, S.FINAL_COVERAGE];
 
-const createJobHandlers = ({ pipelineDeps = {}, serviceDeps = {}, kitModel = InterviewPrepKit } = {}) => {
+const createJobHandlers = ({ pipelineDeps = {}, serviceDeps = {}, kitModel = InterviewPrepKit, mockStore = mockInterviewService.mongoMockStore } = {}) => {
   const loadOwnedKit = async (job, stage) => {
     const kit = await kitModel.findOne({ _id: job.kitId, userId: job.userId });
     if (!kit) throw new JobError('KIT_NOT_FOUND', 'The kit no longer exists.', { stage, status: 404 });
@@ -178,11 +181,149 @@ const createJobHandlers = ({ pipelineDeps = {}, serviceDeps = {}, kitModel = Int
     },
   };
 
+  // ---- mock interviews ----
+  const { STAGES: MOCK } = mockInterviewService;
+
+  // Builder/mock validation errors become job errors with the same code.
+  const rethrowAsJobError = (stage, error) => {
+    if (error instanceof kitBuilderService.KitBuilderError) throw new JobError(error.code, error.message, { stage, status: error.status });
+    throw error;
+  };
+
+  const loadOwnedSession = async (job, stage) => {
+    const session = await mockStore.findOwned(job.input.sessionId, job.userId);
+    if (!session) throw new JobError('MOCK_NOT_FOUND', 'The mock interview no longer exists.', { stage, status: 404 });
+    return session;
+  };
+
+  // Grades the current turn, then asks a follow-up or the next question, or
+  // completes the session with its report. The save only applies while the
+  // session is active and the turn is still unanswered, so a turn is never
+  // saved twice.
+  const mockTurnHandler = {
+    stages: () => [MOCK.GRADING, MOCK.REPORT, MOCK.SAVE],
+    run: async ({ job, context }) => {
+      const saved = context.checkpoints?.[MOCK.SAVE];
+      if (saved?.summary?.sessionId) {
+        await context.onStage(MOCK.SAVE, { fromCheckpoint: true });
+        return saved;
+      }
+      const { turnIndex, answer } = job.input;
+      const session = await loadOwnedSession(job, MOCK.GRADING);
+      if (session.status !== 'active') {
+        throw new JobError('MOCK_NOT_ACTIVE', 'This mock interview has ended.', { stage: MOCK.GRADING, status: 409 });
+      }
+      if (mockInterviewService.currentTurnIndex(session) !== turnIndex) {
+        throw new JobError('MOCK_TURN_MISMATCH', 'This answer is for a question that is no longer current.', { stage: MOCK.GRADING, status: 409 });
+      }
+      const kit = await loadOwnedKit(job, MOCK.GRADING);
+      const turn = session.turns[turnIndex];
+      let gradingContext;
+      try {
+        gradingContext = mockInterviewService.gradingContextFor({ kit, turn, answer });
+      } catch (error) {
+        rethrowAsJobError(MOCK.GRADING, error);
+      }
+      const graded = await runCheckpointedStage(context, MOCK.GRADING, {
+        isValid: (value) => answerFeedbackService.isValidFeedback(value?.feedback),
+        run: () => answerFeedbackService.generateAnswerFeedback({ context: gradingContext, client: serviceDeps.feedbackClient }),
+      });
+
+      const now = new Date();
+      let next;
+      try {
+        next = mockInterviewService.applyGradedTurn({ session, kit, answer: gradingContext.answer, feedback: graded.feedback, now });
+      } catch (error) {
+        rethrowAsJobError(MOCK.GRADING, error);
+      }
+      const outcome = next.completed
+        ? await runCheckpointedStage(context, MOCK.REPORT, {
+          isValid: mockInterviewService.isValidReportOutcome,
+          run: () => mockInterviewService.generateReport({ kit, session: { ...session, turns: next.turns }, client: serviceDeps.feedbackClient }),
+        })
+        : null;
+
+      return runCheckpointedStage(context, MOCK.SAVE, {
+        isValid: (value) => Boolean(value?.summary?.sessionId),
+        run: async () => {
+          const modelsUsed = {
+            ...(session.modelsUsed || {}),
+            [`turn${turnIndex}`]: graded.modelUsed || null,
+            ...(outcome?.modelUsed ? { report: outcome.modelUsed } : {}),
+          };
+          const updated = await mockStore.update(job.input.sessionId, job.userId,
+            { status: 'active', turns: { $size: session.turns.length }, [`turns.${turnIndex}.answer`]: null },
+            {
+              turns: next.turns,
+              currentIndex: next.currentIndex,
+              lastActivityAt: now,
+              modelsUsed,
+              ...(next.completed ? { status: 'completed', report: outcome.report, reportError: outcome.reportError || null } : {}),
+            });
+          if (!updated) throw new JobError('MOCK_TURN_CONFLICT', 'The mock interview changed while this answer was graded.', { stage: MOCK.SAVE, status: 409 });
+          const gradedTurn = next.turns[turnIndex];
+          return {
+            kitId: String(job.kitId),
+            summary: {
+              sessionId: String(job.input.sessionId),
+              turnIndex,
+              score: gradedTurn.feedback.score,
+              verdict: gradedTurn.feedback.verdict,
+              followUpAsked: gradedTurn.followUpAsked,
+              completed: next.completed,
+              reportAvailable: next.completed ? Boolean(outcome.report) : false,
+            },
+          };
+        },
+      });
+    },
+  };
+
+  // Retries the report of a completed session whose report could not be written.
+  const mockReportHandler = {
+    stages: () => [MOCK.REPORT, SAVE_REPORT_STAGE],
+    run: async ({ job, context }) => {
+      const saved = context.checkpoints?.[SAVE_REPORT_STAGE];
+      if (saved?.summary?.sessionId) {
+        await context.onStage(SAVE_REPORT_STAGE, { fromCheckpoint: true });
+        return saved;
+      }
+      const session = await loadOwnedSession(job, MOCK.REPORT);
+      if (session.status !== 'completed' || session.report) {
+        throw new JobError('MOCK_REPORT_NOT_NEEDED', 'Only a completed interview without a report can retry it.', { stage: MOCK.REPORT, status: 409 });
+      }
+      const kit = await loadOwnedKit(job, MOCK.REPORT);
+      const outcome = await runCheckpointedStage(context, MOCK.REPORT, {
+        isValid: (value) => isPlainObject(value?.report),
+        run: async () => {
+          const result = await mockInterviewService.generateReport({ kit, session, client: serviceDeps.feedbackClient });
+          if (!result.report) throw new JobError(result.reportError.code, result.reportError.message, { stage: MOCK.REPORT, status: 502 });
+          return result;
+        },
+      });
+      return runCheckpointedStage(context, SAVE_REPORT_STAGE, {
+        isValid: (value) => Boolean(value?.summary?.sessionId),
+        run: async () => {
+          const updated = await mockStore.update(job.input.sessionId, job.userId, { status: 'completed', report: null }, {
+            report: outcome.report,
+            reportError: null,
+            lastActivityAt: new Date(),
+            modelsUsed: { ...(session.modelsUsed || {}), report: outcome.modelUsed || null },
+          });
+          if (!updated) throw new JobError('MOCK_REPORT_NOT_NEEDED', 'The report was already written.', { stage: SAVE_REPORT_STAGE, status: 409 });
+          return { kitId: String(job.kitId), summary: { sessionId: String(job.input.sessionId), reportAvailable: true } };
+        },
+      });
+    },
+  };
+
   return {
     kit: kitHandler,
     gapQuestions: gapQuestionsHandler,
     regenerate: regenerateHandler,
     answerFeedback: answerFeedbackHandler,
+    mockTurn: mockTurnHandler,
+    mockReport: mockReportHandler,
   };
 };
 

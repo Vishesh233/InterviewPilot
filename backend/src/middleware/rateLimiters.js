@@ -28,6 +28,12 @@ const RATE_LIMIT_DEFAULTS = Object.freeze({
   // accepted requests count (a too-short answer costs nothing).
   RATE_LIMIT_FEEDBACK_MAX: 20,
   RATE_LIMIT_FEEDBACK_WINDOW_MS: 60 * MINUTE_MS,
+  // Starting mock interviews, per user. Only accepted requests count.
+  RATE_LIMIT_MOCK_CREATE_MAX: 5,
+  RATE_LIMIT_MOCK_CREATE_WINDOW_MS: 24 * 60 * MINUTE_MS,
+  // Mock interview answers and report retries (each is one background job), per user.
+  RATE_LIMIT_MOCK_TURN_MAX: 30,
+  RATE_LIMIT_MOCK_TURN_WINDOW_MS: 60 * MINUTE_MS,
 });
 
 const readRateLimitConfig = (env = process.env) => {
@@ -106,6 +112,18 @@ const createRateLimiters = (env = process.env) => {
     answerFeedback: limiter({
       max: config.RATE_LIMIT_FEEDBACK_MAX,
       windowMs: config.RATE_LIMIT_FEEDBACK_WINDOW_MS,
+      keyGenerator: userKey,
+      skipFailedRequests: true,
+    }),
+    mockCreate: limiter({
+      max: config.RATE_LIMIT_MOCK_CREATE_MAX,
+      windowMs: config.RATE_LIMIT_MOCK_CREATE_WINDOW_MS,
+      keyGenerator: userKey,
+      skipFailedRequests: true,
+    }),
+    mockTurn: limiter({
+      max: config.RATE_LIMIT_MOCK_TURN_MAX,
+      windowMs: config.RATE_LIMIT_MOCK_TURN_WINDOW_MS,
       keyGenerator: userKey,
       skipFailedRequests: true,
     }),

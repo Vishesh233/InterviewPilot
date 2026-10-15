@@ -78,3 +78,11 @@ services:
         sync: false
       - key: RATE_LIMIT_FEEDBACK_WINDOW_MS
         sync: false
+      - key: RATE_LIMIT_MOCK_CREATE_MAX
+        sync: false
+      - key: RATE_LIMIT_MOCK_CREATE_WINDOW_MS
+        sync: false
+      - key: RATE_LIMIT_MOCK_TURN_MAX
+        sync: false
+      - key: RATE_LIMIT_MOCK_TURN_WINDOW_MS
+        sync: false
