@@ -67,21 +67,31 @@ const extractTitle = (html) => {
 const MAX_DESCRIPTION_LENGTH = 500;
 const META_DESCRIPTION_NAMES = ['description', 'og:description', 'twitter:description'];
 
-// The page's own one-paragraph summary (<meta name="description"> or its Open
-// Graph / Twitter variants), read from <head> like the title. Untrusted text.
-const extractMetaDescription = (html) => {
+// The content of the first <meta name|property="..."> among `names` (in that
+// order of preference), as plain text. Untrusted text.
+const extractMetaContent = (html, names, maxLength) => {
   if (typeof html !== 'string' || html.length > DEFAULT_MAX_RESPONSE_BYTES) return null;
   const found = {};
   for (const [tag] of html.matchAll(/<meta\b[^>]*>/gi)) {
     const name = /\b(?:name|property)\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2]?.trim().toLowerCase();
     const content = /\bcontent\s*=\s*(["'])([\s\S]*?)\1/i.exec(tag)?.[2];
-    if (name && content && META_DESCRIPTION_NAMES.includes(name) && !found[name]) found[name] = content;
+    if (name && content && names.includes(name) && !found[name]) found[name] = content;
   }
-  const raw = META_DESCRIPTION_NAMES.map((name) => found[name]).find(Boolean);
+  const raw = names.map((name) => found[name]).find(Boolean);
   if (!raw) return null;
-  const description = decodeEntities(raw.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
-  return description ? description.slice(0, MAX_DESCRIPTION_LENGTH) : null;
+  const text = decodeEntities(raw.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, maxLength) : null;
 };
+
+// The page's own one-paragraph summary (<meta name="description"> or its Open
+// Graph / Twitter variants), read from <head> like the title.
+const extractMetaDescription = (html) => extractMetaContent(html, META_DESCRIPTION_NAMES, MAX_DESCRIPTION_LENGTH);
+
+// Name hints for the company name (see companyName.js).
+const extractSiteNames = (html) => ({
+  siteName: extractMetaContent(html, ['og:site_name'], MAX_TITLE_LENGTH),
+  applicationName: extractMetaContent(html, ['application-name'], MAX_TITLE_LENGTH),
+});
 
 const extractText = (html) => {
   if (typeof html !== 'string' || html.length > DEFAULT_MAX_RESPONSE_BYTES) return '';
@@ -143,6 +153,7 @@ const researchCompany = async ({
 
   const title = extractTitle(html);
   const description = extractMetaDescription(html);
+  const { siteName, applicationName } = extractSiteNames(html);
   // Clean the extracted page text deterministically before it is used anywhere:
   // the Company Brief, the research payload returned to clients, and the text
   // the existing LLM stages read.
@@ -162,9 +173,11 @@ const researchCompany = async ({
     companyUrl: response.url || url.href,
     title,
     ...(description ? { description } : {}),
+    ...(siteName ? { siteName } : {}),
+    ...(applicationName ? { applicationName } : {}),
     text,
     ...(includeHtml ? { html } : {}),
   };
 };
 
-module.exports = { researchCompany, extractMetaDescription };
+module.exports = { researchCompany, extractMetaDescription, extractSiteNames };

@@ -230,12 +230,10 @@ describe('kits built with the new requirement shape', () => {
       assert.equal(validation.valid, true, JSON.stringify(validation.errors));
     });
 
-    it(`${name}: the company brief leads with the meta description and drops navigation runs`, () => {
+    it(`${name}: without a generated brief, the company brief is the meta description only`, () => {
       const kit = build(input, pipelineResult);
-      assert.equal(
-        kit.company_brief.summary,
-        'Example builds developer tools for fast, accessible web apps. Example powers millions of deployments every day.'
-      );
+      assert.equal(kit.company_brief.summary, 'Example builds developer tools for fast, accessible web apps.');
+      assert.equal(kit.company_brief.about, kit.company_brief.summary);
       assert.doesNotMatch(kit.company_brief.summary, /Log In|Sign Up|Pricing/);
     });
   }

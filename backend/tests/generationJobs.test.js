@@ -10,12 +10,14 @@ const { generateContent, LlmError, resetLlmCooldowns } = require('../src/service
 const { generateInterviewPrep } = require('../src/controllers/interviewPrepController');
 const { getJob, resumeJob } = require('../src/controllers/generationJobsController');
 const { createMemoryJobStore } = require('./support/memoryJobStore');
+const { mockGenerateCompanyBrief } = require('./support/companyBrief');
 
 // Every LLM-backed stage is mocked; no test reaches the network or MongoDB.
 
 const KIT_STAGE_NAMES = [
   'Requirement extraction',
   'Company research',
+  'Company brief',
   'Question generation',
   'Coverage check',
   'Coverage gap filling',
@@ -71,6 +73,7 @@ const pipelineMocks = () => {
         sources: [{ url: 'https://example.com/', title: 'Example', text: 'Example builds developer tools for engineering teams.' }],
       };
     },
+    generateCompanyBrief: mockGenerateCompanyBrief,
     generateQuestions: async (input) => {
       calls.generate += 1;
       return behaviour.generate(input, calls.generate);

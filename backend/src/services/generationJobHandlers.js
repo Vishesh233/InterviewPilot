@@ -21,7 +21,7 @@ const SAVE_STAGE = 'Saving kit';
 
 const hasSavedKit = (value) => Boolean(value) && typeof value.kitId === 'string' && value.kitId.length > 0;
 
-const KIT_STAGES = [S.EXTRACTION, S.RESEARCH, S.GENERATION, S.COVERAGE, S.GAP_FILL, S.FINAL_COVERAGE];
+const KIT_STAGES = [S.EXTRACTION, S.RESEARCH, S.COMPANY_BRIEF, S.GENERATION, S.COVERAGE, S.GAP_FILL, S.FINAL_COVERAGE];
 
 const createJobHandlers = ({ pipelineDeps = {}, serviceDeps = {}, kitModel = InterviewPrepKit } = {}) => {
   const loadOwnedKit = async (job, stage) => {

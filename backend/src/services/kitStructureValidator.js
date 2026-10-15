@@ -158,6 +158,16 @@ const validateKitStructure = (kit) => {
       if (!isNonEmptyString(kit.company_brief.summary)) {
         push('$.company_brief.summary', 'company_brief.summary must be a non-empty string.', 'MISSING_FIELD');
       }
+      // Structured brief fields; optional because older kits only have summary.
+      if (kit.company_brief.about !== undefined && !isBoundedString(kit.company_brief.about, 2_000)) {
+        push('$.company_brief.about', 'company_brief.about must be a non-empty string when present.', 'INVALID_TYPE');
+      }
+      for (const field of ['offerings', 'roleRelevance']) {
+        const list = kit.company_brief[field];
+        if (list !== undefined && !(Array.isArray(list) && list.length <= 10 && list.every((item) => isBoundedString(item, 500)))) {
+          push(`$.company_brief.${field}`, `company_brief.${field} must be a list of strings when present.`, 'INVALID_TYPE');
+        }
+      }
       if (!Array.isArray(kit.company_brief.sources)) {
         push('$.company_brief.sources', 'company_brief.sources must be an array.', 'INVALID_TYPE');
       } else {

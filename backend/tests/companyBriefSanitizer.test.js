@@ -8,7 +8,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { sanitizeCompanyBriefText, DEFAULT_MAX_LENGTH } = require('../src/services/companyBriefSanitizer');
+const { sanitizeCompanyBriefText, summarizeCompanyBrief, DEFAULT_MAX_LENGTH } = require('../src/services/companyBriefSanitizer');
 const { researchCompany } = require('../src/services/companyResearchService');
 const { buildFinalKit } = require('../src/services/interviewPrepPipelineService');
 const { validateKitStructure } = require('../src/services/kitStructureValidator');
@@ -207,28 +207,26 @@ describe('company brief integration', () => {
     );
   });
 
-  it('sanitizes the displayed brief even when a caller supplies noisy research text', () => {
+  it('never shows page text as the brief when no structured brief was generated', () => {
     const kit = build(
       'Home About Careers Blog Contact Us. Acme builds reliable backend infrastructure for engineering teams. Read more'
     );
     assert.equal(kit.company_brief.name, 'Example');
-    assert.equal(kit.company_brief.summary, 'Acme builds reliable backend infrastructure for engineering teams.');
+    // No meta description either: a neutral line instead of scraped text.
+    assert.equal(kit.company_brief.summary, 'No company summary is available for Example. See the source pages below.');
+    assert.equal(kit.company_brief.about, kit.company_brief.summary);
+    assert.deepEqual(kit.company_brief.offerings, []);
+    assert.deepEqual(kit.company_brief.roleRelevance, []);
     assert.deepEqual(kit.company_brief.sources, [{ url: 'https://example.com/', title: 'Example' }]);
     const validation = validateKitStructure(kit);
     assert.equal(validation.valid, true, JSON.stringify(validation.errors));
   });
 
-  it('falls back to the existing source note when the research text is pure chrome', () => {
-    const kit = build('Home | About | Careers | Contact Us');
-    assert.equal(kit.company_brief.summary, 'Research collected from https://example.com/.');
-  });
-
-  it('keeps genuine sentences and drops only the repeated block', () => {
-    const kit = build(
-      'Acme is headquartered in Berlin. Acme is headquartered in Berlin. Its engineering blog is at https://acme.example.com/blog.'
-    );
+  it('summarizeCompanyBrief keeps genuine sentences and drops only the repeated block', () => {
     assert.equal(
-      kit.company_brief.summary,
+      summarizeCompanyBrief({
+        text: 'Acme is headquartered in Berlin. Acme is headquartered in Berlin. Its engineering blog is at https://acme.example.com/blog.',
+      }),
       'Acme is headquartered in Berlin. Its engineering blog is at https://acme.example.com/blog.'
     );
   });

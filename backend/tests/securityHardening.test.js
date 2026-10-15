@@ -29,6 +29,7 @@ const { createKit } = require('../src/controllers/interviewPrepKitsController');
 const { generateInterviewPrep } = require('../src/controllers/interviewPrepController');
 const { register, login } = require('../src/controllers/authController');
 const { toStoredError } = require('../src/services/generationJobService');
+const { mockGenerateCompanyBrief } = require('./support/companyBrief');
 
 const mockResponse = () => {
   const res = { statusCode: 200, body: undefined, headers: {} };
@@ -909,6 +910,7 @@ describe('pipeline edge cases', () => {
   const successfulDeps = (overrides = {}) => ({
     extractRequirements: async () => requirements,
     researchCompanyPipeline: async () => research,
+    generateCompanyBrief: mockGenerateCompanyBrief,
     generateQuestions: async () => ({ questions: [validQuestion()] }),
     fillCoverageGaps: async ({ questions, coverage }) => ({ questions, coverage }),
     ...overrides,
@@ -1400,6 +1402,7 @@ describe('explicit job role input', () => {
       companyTitle: 'Example',
       sources: [{ url: 'https://example.com/', title: 'Example', text: 'Example builds developer tools for engineering teams.' }],
     }),
+    generateCompanyBrief: mockGenerateCompanyBrief,
     generateQuestions: async () => ({ questions: [validQuestion()] }),
     fillCoverageGaps: async ({ questions, coverage }) => ({ questions, coverage }),
     ...overrides,

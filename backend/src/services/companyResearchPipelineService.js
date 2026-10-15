@@ -5,6 +5,7 @@
 
 const { researchCompany } = require('./companyResearchService');
 const { discoverRelevantLinks } = require('./companyLinkDiscoveryService');
+const { deriveCompanyName } = require('./companyName');
 
 const MAX_ADDITIONAL_PAGES = 3;
 
@@ -97,6 +98,12 @@ const researchCompanyPipeline = async ({ companyUrl, batchFixtureContext } = {},
   return {
     companyUrl: home.companyUrl,
     companyTitle: home.title,
+    companyName: deriveCompanyName({
+      siteName: home.siteName,
+      applicationName: home.applicationName,
+      title: home.title,
+      url: home.companyUrl,
+    }),
     sources,
   };
 };

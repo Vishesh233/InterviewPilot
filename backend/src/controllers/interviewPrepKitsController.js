@@ -6,6 +6,7 @@ const practiceService = require('../services/practiceService');
 const { assertPublicKitUrls } = require('../services/pipelineKitService');
 const { isPlainSafeObject, hasUnsafeKeys } = require('../services/inputValidationService');
 const { checkCoverage } = require('../services/coverageService');
+const { cleanStoredCompanyName } = require('../services/companyName');
 
 const KIT_FIELDS = [
   'source',
@@ -20,9 +21,21 @@ const KIT_FIELDS = [
   'resume_analysis',
 ];
 
+// Kits saved before company names were derived store the page <title>
+// ("Agentic Infrastructure - Vercel"). The name is cleaned when it is read: no
+// fetch and no write, and cleanStoredCompanyName only shortens a multi-part
+// title to the segment naming the kit's own domain, so any other name is
+// returned unchanged.
+const withCleanCompanyName = (kit) => {
+  const brief = kit?.company_brief;
+  if (!brief || typeof brief !== 'object' || typeof brief.name !== 'string') return kit;
+  const name = cleanStoredCompanyName(brief.name, kit.source?.companyUrl);
+  return name === brief.name ? kit : { ...kit, company_brief: { ...brief, name } };
+};
+
 // Normalize outgoing kit response: ensures builder metadata and practice defaults are present.
 const toKitResponse = (kit) =>
-  practiceService.withPracticeDefaults(kitBuilderService.withBuilderMetadata(kit));
+  withCleanCompanyName(practiceService.withPracticeDefaults(kitBuilderService.withBuilderMetadata(kit)));
 
 // The request body IS the kit. Never trust a client-supplied owner.
 const kitFromBody = (body) => {

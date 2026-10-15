@@ -11,6 +11,7 @@ export const pollDelayMs = (elapsedMs) => (elapsedMs < 60_000 ? 2_000 : 5_000);
 const STAGE_LABELS = {
   'Requirement extraction': 'Reading job requirements',
   'Company research': 'Researching the company',
+  'Company brief': 'Writing the company brief',
   'Question generation': 'Generating interview questions',
   'Coverage check': 'Checking requirement coverage',
   'Coverage gap filling': 'Filling coverage gaps',

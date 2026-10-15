@@ -19,7 +19,8 @@ const { toResumeMetadata } = require('./resumeInputService');
 const { assertResumeTextWithinLimit } = require('./resumeTextExtractor');
 const { assertSafeUrl } = require('./urlSecurityService');
 const { BATCH_FIXTURE_CONTEXT } = require('./batchFixtureContext');
-const { summarizeCompanyBrief } = require('./companyBriefSanitizer');
+const { generateCompanyBrief, isCompanyBrief, companyBriefFields } = require('./companyBriefService');
+const { companyNameFromResearch } = require('./companyName');
 const { runCheckpointedStage } = require('./stageCheckpoint');
 const { refineRequirements } = require('./requirementPostProcessing');
 
@@ -28,6 +29,7 @@ const { refineRequirements } = require('./requirementPostProcessing');
 const KIT_PIPELINE_STAGES = Object.freeze({
   EXTRACTION: 'Requirement extraction',
   RESEARCH: 'Company research',
+  COMPANY_BRIEF: 'Company brief',
   GENERATION: 'Question generation',
   COVERAGE: 'Coverage check',
   GAP_FILL: 'Coverage gap filling',
@@ -110,9 +112,6 @@ const runStage = async (stage, action) => {
 const normalizeTitle = (value, fallback) =>
   typeof value === 'string' && value.trim() ? value.trim() : fallback;
 
-const safeText = (value, fallback) =>
-  typeof value === 'string' && value.trim() ? value.trim() : fallback;
-
 const hasExtractedRequirements = (requirements) => {
   const listFields = [
     'mustHaveSkills',
@@ -149,7 +148,7 @@ const uniqueRequirementIds = (requirements) =>
     .filter((value, index, values) => values.indexOf(value) === index);
 
 const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, pipelineResult) => {
-  const { requirements, research, questions, coverage, schedule, resume, resume_analysis } = pipelineResult || {};
+  const { requirements, research, companyBrief, questions, coverage, schedule, resume, resume_analysis } = pipelineResult || {};
   if (!isPlainObject(requirements) || !isPlainObject(research) || !Array.isArray(research.sources)) {
     throw new Error('Pipeline returned malformed requirements or research data.');
   }
@@ -168,13 +167,7 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
     throw new Error('Pipeline returned a malformed company research URL.');
   }
   const roleTitle = normalizeTitle(requirements.role, 'Role not specified');
-  const firstSource = research.sources.find((source) => source.text);
-  const sourceUrl = research.companyUrl;
-  const companyName = normalizeTitle(research.companyTitle, new URL(sourceUrl).hostname || roleTitle);
-  const companySummary = safeText(
-    summarizeCompanyBrief({ description: firstSource?.description, text: firstSource?.text }),
-    `Research collected from ${sourceUrl}.`
-  );
+  const companyName = companyNameFromResearch(research, companyUrl);
 
   return {
     source: {
@@ -184,8 +177,7 @@ const buildFinalKit = ({ jobRole, jobDescription, companyUrl, interviewDays }, p
       interviewDays,
     },
     company_brief: {
-      name: companyName,
-      summary: companySummary,
+      ...companyBriefFields({ companyName, companyBrief, research }),
       sources: research.sources.map(({ url, title }) => ({ url, title })),
     },
     role: {
@@ -229,6 +221,7 @@ const generateInterviewPrepKit = async (input = {}, deps = {}, context = undefin
 
   const extract = deps.extractRequirements || extractRequirements;
   const researchStage = deps.researchCompanyPipeline || researchCompanyPipeline;
+  const writeCompanyBrief = deps.generateCompanyBrief || generateCompanyBrief;
   const generate = deps.generateQuestions || generateQuestions;
   const fillGaps = deps.fillCoverageGaps || fillCoverageGaps;
   const analyzeResume = deps.analyzeResumeMatch || analyzeResumeMatch;
@@ -268,6 +261,17 @@ const generateInterviewPrepKit = async (input = {}, deps = {}, context = undefin
   // 2. Research the public company page (homepage + a few relevant pages).
   const research = await stage(S.RESEARCH, (value) => isPlainObject(value) && Array.isArray(value.sources), () =>
     runStage(S.RESEARCH, () => researchStage({ companyUrl, batchFixtureContext }))
+  );
+
+  // 2b. Structured company brief (one LLM call, grounded in the fetched pages
+  //     and the JD). It falls back to the meta description instead of failing.
+  const companyBrief = await stage(S.COMPANY_BRIEF, isCompanyBrief, () =>
+    runStage(S.COMPANY_BRIEF, () => writeCompanyBrief({
+      companyName: companyNameFromResearch(research, companyUrl),
+      research,
+      jobRole: requirements.role,
+      jobDescription,
+    }))
   );
 
   // 3. Generate the initial questions from requirements + research.
@@ -353,6 +357,7 @@ const generateInterviewPrepKit = async (input = {}, deps = {}, context = undefin
   return {
     requirements,
     research,
+    companyBrief,
     questions: finalQuestions,
     coverage,
     schedule,

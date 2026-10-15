@@ -11,6 +11,7 @@ const { researchCompanyPipeline } = require('../src/services/companyResearchPipe
 const { researchCompany } = require('../src/services/companyResearchService');
 const { validateKitStructure } = require('../src/services/kitStructureValidator');
 const { assertSafeUrl } = require('../src/services/urlSecurityService');
+const { mockGenerateCompanyBrief } = require('./support/companyBrief');
 
 const validCase = (overrides = {}) => ({
   id: 'case-01',
@@ -126,6 +127,7 @@ const successfulPipelineDeps = (overrides = {}) => ({
     companyTitle: 'Example',
     sources: [{ url: companyUrl, title: 'Example', text: 'Builds software products.' }],
   }),
+  generateCompanyBrief: mockGenerateCompanyBrief,
   generateQuestions: async () => ({ questions: [validQuestion()] }),
   fillCoverageGaps: async ({ questions }) => ({ questions }),
   ...overrides,

@@ -1,23 +1,38 @@
 'use client';
 
-import { useState } from 'react';
-import { Badge, Button, Card } from '@/components/ui/Primitives';
+import { Card } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
+import { briefForDisplay } from '@/lib/companyBrief';
 
-// Long briefs open truncated (on a word boundary) with a "Show more" toggle.
-const PREVIEW_LENGTH = 360;
-function BriefSummary({ text }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!text) return <p className="mt-4 text-sm leading-7 text-muted">No company summary was recorded.</p>;
-  const long = text.length > PREVIEW_LENGTH;
-  const preview = long ? `${text.slice(0, PREVIEW_LENGTH).replace(/\s+\S*$/, '')}…` : text;
-  return <div className="mt-4">
-    <p className="whitespace-pre-line text-sm leading-7 text-muted" id="company-brief-summary">{expanded || !long ? text : preview}</p>
-    {long && <Button aria-controls="company-brief-summary" aria-expanded={expanded} className="mt-2 -ml-3" onClick={() => setExpanded((value) => !value)} type="button" variant="quiet">{expanded ? 'Show less' : 'Show more'}</Button>}
+function BriefList({ title, items, icon }) {
+  if (items.length === 0) return null;
+  return <div className="mt-6">
+    <h3 className="text-sm font-semibold text-ink">{title}</h3>
+    <ul className="mt-3 space-y-2.5">{items.map((item) => <li className="flex gap-3 text-sm leading-6 text-muted" key={item}><Icon className="mt-1 shrink-0 text-brand-600" name={icon} size={15} />{item}</li>)}</ul>
   </div>;
 }
 
+const sourceLabel = (source) => {
+  try {
+    const url = new URL(source.url);
+    return `${url.hostname.replace(/^www\./, '')}${url.pathname === '/' ? '' : url.pathname}`;
+  } catch {
+    return source.url;
+  }
+};
+
 export default function CompanyBriefPanel({ kit }) {
-  const brief = kit?.company_brief || {};
-  return <div className="space-y-5"><div className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]"><Card className="p-6"><p className="eyebrow">Company brief</p><h2 className="mt-3 font-display text-3xl tracking-tight text-ink">{brief.name || 'Company workspace'}</h2><BriefSummary text={brief.summary} /></Card><Card className="p-6"><p className="eyebrow">Source note</p><h2 className="mt-3 text-lg font-semibold text-ink">Public research only</h2><p className="mt-3 text-sm leading-6 text-muted">This brief is grounded in the company pages supplied by the backend. Treat it as a starting point, not a substitute for your own questions.</p><div className="mt-5 flex items-center gap-2 text-sm font-medium text-brand-700"><Icon name="external" size={16} />{kit?.source?.companyUrl || 'No source URL'}</div></Card></div><Card className="overflow-hidden"><div className="border-b border-line px-5 py-4"><h2 className="font-semibold text-ink">Research sources</h2></div>{(brief.sources || []).length === 0 ? <p className="px-5 py-8 text-sm text-muted">No sources were recorded.</p> : <ul className="divide-y divide-line">{(brief.sources || []).map((source, index) => <li className="flex items-center justify-between gap-4 px-5 py-4" key={`${source.url}-${index}`}><div className="min-w-0"><p className="truncate text-sm font-medium text-ink">{source.title || 'Untitled source'}</p><p className="mt-1 truncate text-xs text-muted">{source.url}</p></div><Badge tone="gray">Source {index + 1}</Badge></li>)}</ul>}</Card></div>;
+  const brief = briefForDisplay(kit);
+  return <Card className="max-w-3xl p-6 sm:p-8">
+    <p className="eyebrow">Company brief</p>
+    <h2 className="mt-3 font-display text-3xl tracking-tight text-ink">{brief.name}</h2>
+    <p className="mt-4 text-[15px] leading-7 text-ink">{brief.about || 'No company summary is available yet.'}</p>
+    <BriefList icon="layers" items={brief.offerings} title="What they build" />
+    <BriefList icon="target" items={brief.roleRelevance} title="Why it matters for this role" />
+    {brief.sources.length > 0 && <div className="mt-7 border-t border-line pt-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Sources</p>
+      <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2">{brief.sources.map((source, index) => <li key={`${source.url}-${index}`}><a className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline" href={source.url} rel="noopener noreferrer" target="_blank"><Icon name="external" size={14} />{sourceLabel(source)}</a></li>)}</ul>
+      <p className="mt-4 text-xs leading-5 text-muted">Summarized from the company’s public website. Check the details before your interview.</p>
+    </div>}
+  </Card>;
 }

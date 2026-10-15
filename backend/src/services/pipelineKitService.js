@@ -7,19 +7,10 @@ const kitBuilderService = require('./kitBuilderService');
 const practiceService = require('./practiceService');
 const { validateKitStructure } = require('./kitStructureValidator');
 const { assertSafeUrl } = require('./urlSecurityService');
-const { summarizeCompanyBrief } = require('./companyBriefSanitizer');
+const { companyBriefFields } = require('./companyBriefService');
+const { companyNameFromResearch } = require('./companyName');
 
 const nonEmpty = (value) => typeof value === 'string' && value.trim().length > 0;
-
-const companyNameFor = (research, companyUrl) => {
-  if (nonEmpty(research.companyTitle)) return research.companyTitle.trim();
-  try {
-    return new URL(companyUrl).hostname;
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
-    return 'Company workspace';
-  }
-};
 
 const kitFromPipeline = (input, result) => {
   const requirements = result?.requirements || {};
@@ -50,12 +41,6 @@ const kitFromPipeline = (input, result) => {
     return true;
   });
   const sources = Array.isArray(research.sources) ? research.sources.filter((source) => nonEmpty(source?.url)) : [];
-  const firstSource = sources.find((source) => nonEmpty(source.text));
-  // Same summary as the evaluation path (buildFinalKit): sanitized text,
-  // led by the page's meta description, prose sentences only.
-  const summary = firstSource
-    ? summarizeCompanyBrief({ description: firstSource.description, text: firstSource.text })
-    : '';
   const companyUrl = input.companyUrl.trim();
   return {
     source: {
@@ -65,8 +50,8 @@ const kitFromPipeline = (input, result) => {
       interviewDays: input.interviewDays,
     },
     company_brief: {
-      name: companyNameFor(research, companyUrl),
-      summary: summary || `Research collected from ${companyUrl}.`,
+      // Same brief as the evaluation path (buildFinalKit).
+      ...companyBriefFields({ companyName: companyNameFromResearch(research, companyUrl), companyBrief: result?.companyBrief, research }),
       sources: sources.map(({ url, title }) => ({ url, title: nonEmpty(title) ? title : '' })),
     },
     role: {

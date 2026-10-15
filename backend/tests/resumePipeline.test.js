@@ -7,6 +7,7 @@ const { validateKitStructure } = require('../src/services/kitStructureValidator'
 const builder = require('../src/services/kitBuilderService');
 const { createKit } = require('../src/controllers/interviewPrepKitsController');
 const InterviewPrepKit = require('../src/models/InterviewPrepKit');
+const { mockGenerateCompanyBrief } = require('./support/companyBrief');
 
 const RESUME_TEXT = [
   'Sudhanshu Rao',
@@ -50,6 +51,7 @@ const jdDeps = (overrides = {}) => ({
     companyTitle: 'Example',
     sources: [{ url: companyUrl, title: 'Example', text: 'Builds reliable software for engineering teams.' }],
   }),
+  generateCompanyBrief: mockGenerateCompanyBrief,
   generateQuestions: async () => ({ questions: [{ ...jdQuestion }] }),
   fillCoverageGaps: async ({ questions, coverage }) => ({ questions, coverage }),
   ...overrides,
@@ -98,7 +100,7 @@ const mockResponse = () => {
 describe('JD-only pipeline stays unchanged', () => {
   it('returns exactly the established production response shape', async () => {
     const result = await generateInterviewPrepKit(input(), jdDeps());
-    assert.deepEqual(Object.keys(result).sort(), ['coverage', 'questions', 'requirements', 'research', 'schedule']);
+    assert.deepEqual(Object.keys(result).sort(), ['companyBrief', 'coverage', 'questions', 'requirements', 'research', 'schedule']);
     assert.deepEqual(Object.keys(result.coverage).sort(), ['coveragePercent', 'coveredRequirements', 'missingRequirements']);
     assert.equal(result.questions.length, 1);
     assert.equal(result.questions[0].category, 'technical');
@@ -303,7 +305,7 @@ describe('resume text length is bounded by the single MAX_RESUME_TEXT_LENGTH lim
 
   it('leaves the no-resume JD-only flow unchanged', async () => {
     const result = await generateInterviewPrepKit(input(), jdDeps());
-    assert.deepEqual(Object.keys(result).sort(), ['coverage', 'questions', 'requirements', 'research', 'schedule']);
+    assert.deepEqual(Object.keys(result).sort(), ['companyBrief', 'coverage', 'questions', 'requirements', 'research', 'schedule']);
     assert.equal('resume' in result, false);
     assert.equal('resume_analysis' in result, false);
   });
