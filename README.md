@@ -12,12 +12,14 @@ Paste a job description and get a complete interview preparation kit: the role's
 | --- | --- |
 | ![Landing page](docs/screenshots/landing.webp) | ![Dashboard with a saved kit](docs/screenshots/dashboard.webp) |
 | Landing page | Dashboard |
-| ![Kit generation in progress](docs/screenshots/new-kit-progress.webp) | ![Question bank](docs/screenshots/kit-questions.webp) |
-| Kit generation progress | Question bank |
-| ![Requirement coverage map](docs/screenshots/coverage-map.webp) | ![Study schedule](docs/screenshots/schedule.webp) |
-| Coverage map | Schedule |
-| ![Flashcards](docs/screenshots/flashcards.webp) | ![Practice mode](docs/screenshots/practice.webp) |
-| Flashcards | Practice mode |
+| ![Kit generation in progress](docs/screenshots/new-kit-progress.webp) | ![Company brief](docs/screenshots/kit-brief.webp) |
+| Kit generation progress | Company brief |
+| ![Question bank](docs/screenshots/kit-questions.webp) | ![Requirement coverage map](docs/screenshots/coverage-map.webp) |
+| Question bank | Coverage map |
+| ![Study schedule](docs/screenshots/schedule.webp) | ![Flashcards](docs/screenshots/flashcards.webp) |
+| Schedule | Flashcards |
+| ![Practice mode](docs/screenshots/practice.webp) | |
+| Practice mode | |
 
 <p>
   <img alt="Landing page on a phone" src="docs/screenshots/landing-mobile.webp" width="260" />
