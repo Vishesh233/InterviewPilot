@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { isActiveJob } from '@/lib/jobs';
+import { withFeedbackAttempt } from '@/lib/answerFeedback';
 import { useJobPolling } from '@/components/jobs/useJobPolling';
 
 const messageFor = (error, fallback) => error instanceof ApiError ? error.message : fallback;
@@ -165,5 +166,8 @@ export function useKitWorkspace({ token, kitId }) {
   };
   const cancelPending = () => setConfirmation(null);
 
-  return { kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion: askToDeleteQuestion, regenerate, generateGaps, reload: load, kitJob, kitJobState, kitJobActive, kitJobPollError, resumingJob, resumeKitJob, retryKitJob, dismissKitJob, confirmation, confirmPending, cancelPending };
+  // A finished answer-feedback job: keep the kit's attempt history current.
+  const addFeedbackAttempt = useCallback((questionId, attempt) => setKit((current) => withFeedbackAttempt(current, questionId, attempt)), []);
+
+  return { addFeedbackAttempt, kit, loading, error, section, setSection, editingId, setEditingId, savingId, regenerating, generatingGaps, gapCount, notice, editQuestion, pinQuestion, reorder, deleteQuestion: askToDeleteQuestion, regenerate, generateGaps, reload: load, kitJob, kitJobState, kitJobActive, kitJobPollError, resumingJob, resumeKitJob, retryKitJob, dismissKitJob, confirmation, confirmPending, cancelPending };
 }

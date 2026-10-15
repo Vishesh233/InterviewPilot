@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { Alert, Button, LoadingState } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
+import AnswerPractice from '@/components/answers/AnswerPractice';
+import { feedbackHistoryFor, questionForFlashcard } from '@/lib/answerFeedback';
 import PracticeCard from './PracticeCard';
 import { PracticeEmpty, PracticeStats } from './PracticeStats';
 
@@ -17,8 +19,10 @@ const sessionOrder = (current, ids, reorder) => {
 };
 
 // `source` ({ load, update }) replaces the API, e.g. the in-memory practice of a
-// demo kit; `saveNote` is the line under the confidence scale.
-export default function PracticeMode({ token, kitId, onBack, source, saveNote }) {
+// demo kit; `saveNote` is the line under the confidence scale. With `kit` and
+// `answers` ({ token, kitId, demo, onAttempt }) a revealed card offers answer
+// practice with AI feedback for the card's question.
+export default function PracticeMode({ token, kitId, onBack, source, saveNote, kit, answers }) {
   const [session, setSession] = useState(null);
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -55,10 +59,11 @@ export default function PracticeMode({ token, kitId, onBack, source, saveNote })
     setSaving(true); setError('');
     try { await (source ? source.update(current.flashcard.id, changes) : api.updatePractice(token, kitId, current.flashcard.id, changes)); await load(); setRevealed(true); } catch (requestError) { setError(requestError instanceof ApiError ? requestError.message : 'We could not save your practice update.'); } finally { setSaving(false); }
   };
+  const answerQuestion = answers ? questionForFlashcard(kit, current?.flashcard) : null;
   const move = (direction) => { const next = index + direction; if (next < 0 || next >= items.length) return; setIndex(next); setRevealed(false); };
 
   if (loading) return <LoadingState detail="Putting your cards in order." label="Opening Practice Mode" />;
   if (error && !session) return <Alert title="Practice Mode is unavailable">{error}</Alert>;
   if (!items.length) return <PracticeEmpty onBack={onBack} />;
-  return <div className="space-y-5"><PracticeStats progress={session.progress || {}} /><PracticeCard index={index} saveNote={saveNote} item={current} onMove={move} onReveal={() => setRevealed(true)} onUpdate={update} revealed={revealed} saving={saving} total={items.length} />{error && <Alert>{error}</Alert>}<div className="flex flex-col items-center gap-2 text-center"><p className="text-xs text-muted">The order stays fixed while you practice. Reordering puts uncovered cards first, then unrated, then lower confidence.</p><Button disabled={saving} onClick={() => load({ reorder: true })} type="button" variant="quiet"><Icon name="refresh" size={15} />Reorder by priority</Button></div></div>;
+  return <div className="space-y-5"><PracticeStats progress={session.progress || {}} /><PracticeCard answerSlot={answerQuestion && <AnswerPractice demo={answers.demo} history={feedbackHistoryFor(kit, answerQuestion.id)} key={answerQuestion.id} kitId={answers.kitId} onAttempt={answers.onAttempt} question={answerQuestion} token={answers.token} />} index={index} saveNote={saveNote} item={current} onMove={move} onReveal={() => setRevealed(true)} onUpdate={update} revealed={revealed} saving={saving} total={items.length} />{error && <Alert>{error}</Alert>}<div className="flex flex-col items-center gap-2 text-center"><p className="text-xs text-muted">The order stays fixed while you practice. Reordering puts uncovered cards first, then unrated, then lower confidence.</p><Button disabled={saving} onClick={() => load({ reorder: true })} type="button" variant="quiet"><Icon name="refresh" size={15} />Reorder by priority</Button></div></div>;
 }

@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { Badge, Button, Card } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
+import AnswerPractice from '@/components/answers/AnswerPractice';
 import { answerPoints, difficultyLabel, questionText } from '@/lib/format';
+import { feedbackHistoryFor } from '@/lib/answerFeedback';
 
 // "resume" identifies questions grounded in the candidate's own experience and
 // projects. It is a new backend category, so the label/tone are mapped here.
@@ -25,7 +27,7 @@ function QuestionEditor({ question, onCancel, onSave, saving }) {
 
 // Compact, collapsible card: the question is always visible; the answer
 // outline, the requirements it covers and why it matters open on demand.
-function QuestionCard({ question, index, number, total, expanded, onToggle, canReorder, editing, saving, onEdit, onCancel, onSave, onPin, onMove, onDelete, readOnly }) {
+function QuestionCard({ question, index, number, total, expanded, onToggle, canReorder, editing, saving, onEdit, onCancel, onSave, onPin, onMove, onDelete, readOnly, answerSlot }) {
   const points = answerPoints(question);
   const detailsId = `question-details-${question.id}`;
   const open = expanded || editing;
@@ -55,11 +57,13 @@ function QuestionCard({ question, index, number, total, expanded, onToggle, canR
         <Button aria-label={`Delete ${question.id}`} disabled={saving || total <= 1} onClick={onDelete} title={total <= 1 ? 'At least one question is required' : 'Delete question'} variant="quiet"><Icon name="trash" size={15} /></Button>
       </div>}
     </div>}
+    {!editing && answerSlot && <div className="mt-3 border-t border-line pt-3">{answerSlot}</div>}
   </Card>;
 }
 
-// `readOnly` (demo kits) hides reorder, edit, pin and delete.
-export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit, readOnly = false }) {
+// `readOnly` (demo kits) hides reorder, edit, pin and delete. `answers`
+// ({ token, kitId, demo, onAttempt }) adds "Answer this question" to each card.
+export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit, readOnly = false, answers }) {
   const questions = kit?.questions || [];
   const resumeCount = questions.filter(isResumeQuestion).length;
   const [filter, setFilter] = useState('all');
@@ -92,6 +96,6 @@ export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, 
     </div>}
     {questions.length === 0
       ? <Card className="p-8 text-center text-sm text-muted">No questions were generated for this kit.</Card>
-      : visible.map(({ question, index }) => <QuestionCard canReorder={!readOnly && filter === 'all'} readOnly={readOnly} editing={editingId === question.id} expanded={expandedIds.has(question.id)} index={index} key={question.id} number={index + 1} onCancel={onCancelEdit} onDelete={() => onDelete(question)} onEdit={() => onEdit(question.id)} onMove={(direction) => onReorder(index, direction)} onPin={() => onPin(question)} onSave={(changes) => onSave(question.id, changes)} onToggle={() => toggle(question.id)} question={question} saving={savingId === question.id} total={questions.length} />)}
+      : visible.map(({ question, index }) => <QuestionCard canReorder={!readOnly && filter === 'all'} readOnly={readOnly} editing={editingId === question.id} expanded={expandedIds.has(question.id)} index={index} key={question.id} number={index + 1} onCancel={onCancelEdit} onDelete={() => onDelete(question)} onEdit={() => onEdit(question.id)} onMove={(direction) => onReorder(index, direction)} onPin={() => onPin(question)} onSave={(changes) => onSave(question.id, changes)} onToggle={() => toggle(question.id)} question={question} saving={savingId === question.id} total={questions.length} answerSlot={answers && <AnswerPractice demo={answers.demo} history={feedbackHistoryFor(kit, question.id)} kitId={answers.kitId} onAttempt={answers.onAttempt} question={question} token={answers.token} />} />)}
   </div>;
 }

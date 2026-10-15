@@ -20,6 +20,8 @@ const STAGE_LABELS = {
   'Resume question generation': 'Writing questions about your projects',
   'Interview scheduling': 'Building the preparation schedule',
   'Saving kit': 'Saving your kit',
+  'Answer feedback': 'Reviewing your answer',
+  'Saving feedback': 'Saving your feedback',
 };
 
 export const stageLabel = (stage) => (stage && STAGE_LABELS[stage]) || stage || 'Getting started';
@@ -35,6 +37,7 @@ const MESSAGES = {
   LLM_NO_USABLE_OUTPUT: 'The AI models returned answers that could not be used. Please try again in a minute.',
   KIT_VALIDATION_FAILED: 'The generated kit did not pass validation, so it was not saved.',
   KIT_NOT_FOUND: 'This kit no longer exists.',
+  QUESTION_NOT_FOUND: 'This question is no longer in the kit.',
   LLM_THINKING_CONFIG_REJECTED: 'The AI provider rejected the server configuration.',
   LLM_INVALID_CONFIG: 'The AI provider is misconfigured on the server.',
   LLM_NOT_CONFIGURED: 'The AI provider is not configured on the server.',

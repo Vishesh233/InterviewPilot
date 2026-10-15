@@ -32,6 +32,7 @@ Paste a job description and get a complete interview preparation kit: the role's
 - **Job description → kit.** Paste a JD, the role and the company URL; the kit is generated in the background and the page shows each step as it runs.
 - **Requirements.** Every named technology, tool and standard becomes its own requirement, split into must-have, nice-to-have, responsibilities and qualifications. Title, seniority and years of experience are kept as role metadata, not requirements.
 - **Questions.** Technical, behavioral, company and role-specific questions with answer outlines. Questions can be edited, pinned, reordered, deleted, or regenerated per category.
+- **Answer feedback.** Write an answer to any question (on its card or in Practice Mode) and get a 1–10 score, a verdict, what worked, what to add, a stronger answer and a likely follow-up to practice next. Feedback is graded only against the question's outline and requirements. An optional two-minute interview timer is available, and the last five attempts per question are kept.
 - **Coverage map.** Which question covers which requirement, computed on the server from the final question set. Uncovered requirements stay visible, and one click generates questions for them.
 - **Company brief.** A short summary built from public pages of the company's website.
 - **Schedule.** A day-by-day plan across the number of days until the interview (1–60).
