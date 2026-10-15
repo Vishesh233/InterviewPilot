@@ -188,6 +188,13 @@ export const api = {
   // AI feedback on a practice answer: 202 { jobId }; the finished job's summary holds the attempt.
   requestAnswerFeedback: (token, kitId, questionId, body) =>
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/questions/${encodeURIComponent(questionId)}/feedback`, { method: 'POST', token, body }),
+  // Mock interviews: answers and report retries answer 202 { jobId }.
+  startMockInterview: (token, kitId, length) => apiRequest(`/api/kits/${encodeURIComponent(kitId)}/mock-interviews`, { method: 'POST', token, body: { length } }),
+  listMockInterviews: (token, kitId) => apiRequest(`/api/kits/${encodeURIComponent(kitId)}/mock-interviews`, { token }),
+  getMockInterview: (token, sessionId) => apiRequest(`/api/mock-interviews/${encodeURIComponent(sessionId)}`, { token }),
+  answerMockInterview: (token, sessionId, answer) => apiRequest(`/api/mock-interviews/${encodeURIComponent(sessionId)}/answer`, { method: 'POST', token, body: { answer } }),
+  abandonMockInterview: (token, sessionId) => apiRequest(`/api/mock-interviews/${encodeURIComponent(sessionId)}/abandon`, { method: 'POST', token, body: {} }),
+  retryMockReport: (token, sessionId) => apiRequest(`/api/mock-interviews/${encodeURIComponent(sessionId)}/report`, { method: 'POST', token, body: {} }),
   getPractice: (token, kitId) => apiRequest(`/api/kits/${encodeURIComponent(kitId)}/practice`, { token }),
   updatePractice: (token, kitId, flashcardId, changes) =>
     apiRequest(`/api/kits/${encodeURIComponent(kitId)}/practice/${encodeURIComponent(flashcardId)}`, { method: 'PATCH', token, body: changes }),

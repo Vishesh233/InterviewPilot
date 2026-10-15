@@ -15,6 +15,12 @@ export default function PracticePage() {
   const params = useParams();
   const { token, loading } = useAuth();
   const [kit, setKit] = useState(null);
+  // ?questions=q2,q6 ("Practice these" on a mock interview report).
+  const [onlyQuestionIds, setOnlyQuestionIds] = useState(null);
+  useEffect(() => {
+    const ids = (new URLSearchParams(window.location.search).get('questions') || '').split(',').map((id) => id.trim()).filter(Boolean);
+    setOnlyQuestionIds(ids.length ? ids : null);
+  }, []);
   useEffect(() => { if (!loading && !token) router.replace('/login'); }, [loading, router, token]);
   // The kit labels the page and gives answer practice its questions and history.
   useEffect(() => {
@@ -28,5 +34,5 @@ export default function PracticePage() {
   const kitLabel = kit ? `${kit.role?.title || 'Interview'} at ${companyNameOf(kit)}` : '';
   const answers = { token, kitId: params.id, onAttempt: (questionId, attempt) => setKit((current) => withFeedbackAttempt(current, questionId, attempt)) };
   if (loading || !token) return <PageFrame><LoadingState label="Checking your session" /></PageFrame>;
-  return <PageFrame className="max-w-5xl"><div className="mb-5 flex items-start justify-between gap-4 sm:mb-7 sm:items-center"><div><p className="eyebrow">Practice Mode</p><h1 className="mt-2 font-display text-2xl tracking-tight text-ink sm:text-4xl">Build recall, one card at a time.</h1>{kitLabel && <p className="mt-2 text-sm text-muted">{kitLabel}</p>}</div><Button onClick={() => router.push(`/kits/${encodeURIComponent(params.id)}`)} variant="secondary">Back to kit</Button></div><PracticeMode answers={kit ? answers : undefined} kit={kit} kitId={params.id} token={token} /></PageFrame>;
+  return <PageFrame className="max-w-5xl"><div className="mb-5 flex items-start justify-between gap-4 sm:mb-7 sm:items-center"><div><p className="eyebrow">Practice Mode</p><h1 className="mt-2 font-display text-2xl tracking-tight text-ink sm:text-4xl">Build recall, one card at a time.</h1>{kitLabel && <p className="mt-2 text-sm text-muted">{kitLabel}</p>}</div><Button onClick={() => router.push(`/kits/${encodeURIComponent(params.id)}`)} variant="secondary">Back to kit</Button></div><PracticeMode answers={kit ? answers : undefined} kit={kit} kitId={params.id} onlyQuestionIds={onlyQuestionIds} token={token} /></PageFrame>;
 }

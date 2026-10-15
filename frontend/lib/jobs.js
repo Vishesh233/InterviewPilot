@@ -22,6 +22,10 @@ const STAGE_LABELS = {
   'Saving kit': 'Saving your kit',
   'Answer feedback': 'Reviewing your answer',
   'Saving feedback': 'Saving your feedback',
+  'Mock answer grading': 'Reviewing your answer',
+  'Mock report': 'Writing your report card',
+  'Saving mock turn': 'Saving your answer',
+  'Saving mock report': 'Saving your report card',
 };
 
 export const stageLabel = (stage) => (stage && STAGE_LABELS[stage]) || stage || 'Getting started';

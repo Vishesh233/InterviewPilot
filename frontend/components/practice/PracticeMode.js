@@ -22,7 +22,9 @@ const sessionOrder = (current, ids, reorder) => {
 // demo kit; `saveNote` is the line under the confidence scale. With `kit` and
 // `answers` ({ token, kitId, demo, onAttempt }) a revealed card offers answer
 // practice with AI feedback for the card's question.
-export default function PracticeMode({ token, kitId, onBack, source, saveNote, kit, answers }) {
+// `onlyQuestionIds` (from a mock interview report's "Practice these") limits
+// the session to the cards of those questions until "Practice all cards".
+export default function PracticeMode({ token, kitId, onBack, source, saveNote, kit, answers, onlyQuestionIds }) {
   const [session, setSession] = useState(null);
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,6 +32,8 @@ export default function PracticeMode({ token, kitId, onBack, source, saveNote, k
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [limitIds, setLimitIds] = useState(null);
+  useEffect(() => { setLimitIds(onlyQuestionIds?.length ? onlyQuestionIds : null); setIndex(0); setRevealed(false); }, [onlyQuestionIds]);
 
   // Loads practice state. The full-page loading state is shown only when a
   // session starts; refreshes after a rating keep the current card on screen.
@@ -50,8 +54,9 @@ export default function PracticeMode({ token, kitId, onBack, source, saveNote, k
 
   const items = useMemo(() => {
     const byId = new Map((session?.items || []).map((item) => [item.flashcard?.id, item]));
-    return (order || []).map((id) => byId.get(id)).filter(Boolean);
-  }, [order, session]);
+    const inLimit = (item) => !limitIds || (item.flashcard?.questionIds || []).some((questionId) => limitIds.includes(questionId));
+    return (order || []).map((id) => byId.get(id)).filter(Boolean).filter(inLimit);
+  }, [limitIds, order, session]);
   useEffect(() => { if (index > 0 && index >= items.length) setIndex(Math.max(0, items.length - 1)); }, [index, items.length]);
   const current = items[index];
   const update = async (changes) => {
@@ -65,5 +70,5 @@ export default function PracticeMode({ token, kitId, onBack, source, saveNote, k
   if (loading) return <LoadingState detail="Putting your cards in order." label="Opening Practice Mode" />;
   if (error && !session) return <Alert title="Practice Mode is unavailable">{error}</Alert>;
   if (!items.length) return <PracticeEmpty onBack={onBack} />;
-  return <div className="space-y-5"><PracticeStats progress={session.progress || {}} /><PracticeCard answerSlot={answerQuestion && <AnswerPractice demo={answers.demo} history={feedbackHistoryFor(kit, answerQuestion.id)} key={answerQuestion.id} kitId={answers.kitId} onAttempt={answers.onAttempt} question={answerQuestion} token={answers.token} />} index={index} saveNote={saveNote} item={current} onMove={move} onReveal={() => setRevealed(true)} onUpdate={update} revealed={revealed} saving={saving} total={items.length} />{error && <Alert>{error}</Alert>}<div className="flex flex-col items-center gap-2 text-center"><p className="text-xs text-muted">The order stays fixed while you practice. Reordering puts uncovered cards first, then unrated, then lower confidence.</p><Button disabled={saving} onClick={() => load({ reorder: true })} type="button" variant="quiet"><Icon name="refresh" size={15} />Reorder by priority</Button></div></div>;
+  return <div className="space-y-5">{limitIds && <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800"><span>Practicing {items.length} card{items.length === 1 ? '' : 's'} from your interview report.</span><Button onClick={() => { setLimitIds(null); setIndex(0); setRevealed(false); }} type="button" variant="quiet">Practice all cards</Button></div>}<PracticeStats progress={session.progress || {}} /><PracticeCard answerSlot={answerQuestion && <AnswerPractice demo={answers.demo} history={feedbackHistoryFor(kit, answerQuestion.id)} key={answerQuestion.id} kitId={answers.kitId} onAttempt={answers.onAttempt} question={answerQuestion} token={answers.token} />} index={index} saveNote={saveNote} item={current} onMove={move} onReveal={() => setRevealed(true)} onUpdate={update} revealed={revealed} saving={saving} total={items.length} />{error && <Alert>{error}</Alert>}<div className="flex flex-col items-center gap-2 text-center"><p className="text-xs text-muted">The order stays fixed while you practice. Reordering puts uncovered cards first, then unrated, then lower confidence.</p><Button disabled={saving} onClick={() => load({ reorder: true })} type="button" variant="quiet"><Icon name="refresh" size={15} />Reorder by priority</Button></div></div>;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Button, Card } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
 import AnswerPractice from '@/components/answers/AnswerPractice';
@@ -31,7 +31,7 @@ function QuestionCard({ question, index, number, total, expanded, onToggle, canR
   const points = answerPoints(question);
   const detailsId = `question-details-${question.id}`;
   const open = expanded || editing;
-  return <Card className={`p-4 sm:p-5 ${question.pinned ? 'border-brand-200' : ''}`}>
+  return <Card className={`scroll-mt-28 p-4 sm:p-5 ${question.pinned ? 'border-brand-200' : ''}`} id={`question-card-${question.id}`}>
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-muted">{String(number).padStart(2, '0')}</span>
       <Badge tone={isResumeQuestion(question) ? 'amber' : 'green'}>{categoryLabel(question.category)}</Badge>
@@ -63,11 +63,18 @@ function QuestionCard({ question, index, number, total, expanded, onToggle, canR
 
 // `readOnly` (demo kits) hides reorder, edit, pin and delete. `answers`
 // ({ token, kitId, demo, onAttempt }) adds "Answer this question" to each card.
-export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit, readOnly = false, answers }) {
+// `focusQuestionId` opens that question and scrolls to it (links from a mock interview report).
+export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit, readOnly = false, answers, focusQuestionId }) {
   const questions = kit?.questions || [];
   const resumeCount = questions.filter(isResumeQuestion).length;
   const [filter, setFilter] = useState('all');
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const hasFocusQuestion = Boolean(focusQuestionId) && questions.some((question) => question.id === focusQuestionId);
+  useEffect(() => {
+    if (!hasFocusQuestion) return;
+    setExpandedIds((current) => new Set([...current, focusQuestionId]));
+    requestAnimationFrame(() => document.getElementById(`question-card-${focusQuestionId}`)?.scrollIntoView({ block: 'start' }));
+  }, [focusQuestionId, hasFocusQuestion]);
   const categoryOf = (question) => question.category || 'role_specific';
   const categories = [...new Set(questions.map(categoryOf))];
   const visible = questions

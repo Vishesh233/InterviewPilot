@@ -50,6 +50,7 @@ Colors, radii and shadows are CSS variables in `app/globals.css` (the design tok
 - `/kits/new`
 - `/kits/[id]`
 - `/kits/[id]/practice`
+- `/kits/[id]/interview` (mock interview: start screen, chat, report card, past interviews; an interview in progress resumes on reload)
 - `/demo` and `/demo/[slug]` (public, static demo kits; no sign-in)
 
 The app stores the short-lived backend JWT in browser storage. Clear it with the Logout action or browser storage removal.

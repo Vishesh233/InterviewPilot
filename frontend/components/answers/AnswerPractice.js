@@ -19,7 +19,7 @@ import {
 
 const sectionLabel = 'text-xs font-semibold uppercase tracking-[0.12em] text-muted';
 
-function VerdictBadge({ verdict }) {
+export function VerdictBadge({ verdict }) {
   const { label, className } = verdictOf(verdict);
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${className}`}>{label}</span>;
 }
@@ -30,6 +30,21 @@ function FeedbackList({ title, items, icon, iconClass }) {
   return <div><p className={sectionLabel}>{title}</p><ul className="mt-2 space-y-2">{items.map((item, index) => <li className="flex gap-2 text-sm leading-5 text-ink" key={index}><Icon className={`mt-0.5 shrink-0 ${iconClass}`} name={icon} size={14} />{item}</li>)}</ul></div>;
 }
 
+// "What worked", "What to add" and the collapsible stronger answer; also used
+// for mock interview turns.
+export function FeedbackDetails({ feedback }) {
+  return <>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <FeedbackList icon="check" iconClass="text-brand-600" items={feedback.strengths} title="What worked" />
+      <FeedbackList icon="plus" iconClass="text-warning-700" items={feedback.gaps} title="What to add" />
+    </div>
+    <details className="group mt-4 rounded-control border border-line bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">Stronger answer<Icon className="shrink-0 text-muted transition-transform group-open:rotate-180" name="down" size={16} /></summary>
+      <p className="border-t border-line px-4 py-3 text-sm leading-6 text-ink">{feedback.improvedAnswer}</p>
+    </details>
+  </>;
+}
+
 function FeedbackResult({ attempt, onTryAgain, onPracticeFollowUp }) {
   const { feedback } = attempt;
   return <div className="rounded-xl border border-line bg-subtle p-4 sm:p-5">
@@ -38,14 +53,7 @@ function FeedbackResult({ attempt, onTryAgain, onPracticeFollowUp }) {
       <VerdictBadge verdict={feedback.verdict} />
       {attempt.followUpQuestion && <span className="text-xs text-muted">Follow-up answer</span>}
     </div>
-    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-      <FeedbackList icon="check" iconClass="text-brand-600" items={feedback.strengths} title="What worked" />
-      <FeedbackList icon="plus" iconClass="text-warning-700" items={feedback.gaps} title="What to add" />
-    </div>
-    <details className="group mt-4 rounded-control border border-line bg-surface">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">Stronger answer<Icon className="shrink-0 text-muted transition-transform group-open:rotate-180" name="down" size={16} /></summary>
-      <p className="border-t border-line px-4 py-3 text-sm leading-6 text-ink">{feedback.improvedAnswer}</p>
-    </details>
+    <div className="mt-4"><FeedbackDetails feedback={feedback} /></div>
     <div className="mt-4 rounded-control border border-line bg-surface px-4 py-3">
       <p className={sectionLabel}>Likely follow-up</p>
       <p className="mt-1.5 text-sm leading-6 text-ink">{feedback.followUp}</p>
@@ -71,7 +79,8 @@ function AttemptHistory({ attempts }) {
 }
 
 // Two-minute countdown. Typing stops at zero; the answer can still be sent.
-function useCountdown(running) {
+// `running` is falsy when stopped; a new truthy value restarts the countdown.
+export function useCountdown(running) {
   const [secondsLeft, setSecondsLeft] = useState(INTERVIEW_MODE_SECONDS);
   useEffect(() => {
     setSecondsLeft(INTERVIEW_MODE_SECONDS);
