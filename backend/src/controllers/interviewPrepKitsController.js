@@ -1,5 +1,6 @@
 const InterviewPrepKit = require('../models/InterviewPrepKit');
 const GenerationJob = require('../models/GenerationJob');
+const MockInterview = require('../models/MockInterview');
 const { validateKitStructure } = require('../services/kitStructureValidator');
 const kitBuilderService = require('../services/kitBuilderService');
 const practiceService = require('../services/practiceService');
@@ -182,9 +183,13 @@ const updateKit = async (req, res) => {
 
 // DELETE /api/kits/:id
 // Owner only (another user's kit is a 404). Refused with 409 while a generation
-// job for the kit is still active; otherwise the kit and its finished jobs are
-// removed. Both job queries are scoped to req.userId, so they never reveal
-// whether another user's kit exists.
+// job for the kit is still active (this includes a mock interview answer being
+// graded); otherwise the kit, its mock interview sessions and its finished jobs
+// are removed. An active mock interview is deleted with its kit: it cannot
+// continue without the kit's questions. Sessions are removed before the kit, so
+// a failure there leaves the kit in place (500, retryable) instead of an active
+// session that points at a deleted kit and blocks new interviews. Every query
+// is scoped to req.userId, so none reveals whether another user's kit exists.
 const deleteKit = async (req, res) => {
   try {
     const kitJobs = { userId: req.userId, $or: [{ kitId: req.params.id }, { 'result.kitId': req.params.id }] };
@@ -198,6 +203,7 @@ const deleteKit = async (req, res) => {
         },
       });
     }
+    await MockInterview.deleteMany({ userId: req.userId, kitId: req.params.id });
     const deleted = await InterviewPrepKit.findOneAndDelete({ _id: req.params.id, userId: req.userId });
     if (isNotFoundOrForeign(deleted)) {
       return res.status(404).json({ message: 'Kit not found' });

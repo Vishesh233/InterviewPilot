@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const InterviewPrepKit = require('../src/models/InterviewPrepKit');
 const GenerationJob = require('../src/models/GenerationJob');
+const MockInterview = require('../src/models/MockInterview');
 const {
   createKit,
   listKits,
@@ -60,12 +61,14 @@ const mockResponse = () => {
   return res;
 };
 
-// Job model stubs default to "no jobs", so no test ever reaches MongoDB.
-const withModelStubs = (t, stubs, jobStubs = {}) => {
+// Job and mock interview model stubs default to "none", so no test ever reaches MongoDB.
+const withModelStubs = (t, stubs, jobStubs = {}, mockStubs = {}) => {
   const methods = ['create', 'find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete'];
   const jobMethods = { exists: async () => null, deleteMany: async () => ({ deletedCount: 0 }), ...jobStubs };
+  const mockMethods = { deleteMany: async () => ({ deletedCount: 0 }), ...mockStubs };
   const originals = {};
   const jobOriginals = {};
+  const mockOriginals = {};
   for (const method of methods) {
     originals[method] = InterviewPrepKit[method];
     if (stubs[method] !== undefined) InterviewPrepKit[method] = stubs[method];
@@ -74,9 +77,14 @@ const withModelStubs = (t, stubs, jobStubs = {}) => {
     jobOriginals[method] = GenerationJob[method];
     GenerationJob[method] = stub;
   }
+  for (const [method, stub] of Object.entries(mockMethods)) {
+    mockOriginals[method] = MockInterview[method];
+    MockInterview[method] = stub;
+  }
   t.after(() => {
     for (const method of methods) InterviewPrepKit[method] = originals[method];
     for (const method of Object.keys(jobMethods)) GenerationJob[method] = jobOriginals[method];
+    for (const method of Object.keys(mockMethods)) MockInterview[method] = mockOriginals[method];
   });
 };
 
@@ -338,6 +346,45 @@ describe('kit delete: ownership and generation jobs', () => {
     assert.equal(res.body.error.code, 'KIT_JOB_ACTIVE');
     assert.equal(res.body.error.jobId, 'job-9');
     assert.equal(deleted, false);
+  });
+
+  it("removes the kit's mock interview sessions (active ones too) before the kit, for the owner only", async (t) => {
+    const order = [];
+    let sessionFilter = null;
+    withModelStubs(t, {
+      findOneAndDelete: async () => { order.push('kit'); return { _id: 'kit-1' }; },
+    }, {}, {
+      deleteMany: async (filter) => { order.push('sessions'); sessionFilter = filter; return { deletedCount: 2 }; },
+    });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(sessionFilter, { userId: 'user-A', kitId: 'kit-1' }, 'no status filter: an active session goes too');
+    assert.deepEqual(order, ['sessions', 'kit']);
+  });
+
+  it('keeps the kit and answers 500 when its sessions cannot be removed', async (t) => {
+    const errors = t.mock.method(console, 'error', () => {});
+    let kitDeleted = false;
+    withModelStubs(t, {
+      findOneAndDelete: async () => { kitDeleted = true; return { _id: 'kit-1' }; },
+    }, {}, {
+      deleteMany: async () => { throw Object.assign(new Error('db down'), { name: 'MongoError' }); },
+    });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 500);
+    assert.equal(kitDeleted, false);
+    assert.equal(errors.mock.callCount(), 1, 'the failure is logged');
+  });
+
+  it('removes no sessions while a job for the kit (such as a mock answer being graded) is active', async (t) => {
+    let sessionsRemoved = false;
+    withModelStubs(t, {}, { exists: async () => ({ _id: 'job-9' }) }, { deleteMany: async () => { sessionsRemoved = true; } });
+    const res = mockResponse();
+    await deleteKit({ userId: 'user-A', params: { id: 'kit-1' } }, res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(sessionsRemoved, false);
   });
 
   it('still reports success when only the job cleanup fails, and logs it', async (t) => {
