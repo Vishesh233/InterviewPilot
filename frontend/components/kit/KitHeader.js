@@ -41,17 +41,39 @@ function SectionTabs({ tabs, active, onSection }) {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [measure]);
+  // Scrolls the active tab into view unless it already fits; true when it fits.
+  const revealActive = useCallback(() => {
+    const nav = navRef.current;
+    const tab = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !tab) return true;
+    const strip = nav.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    if (box.left >= strip.left - 1 && box.right <= strip.right + 1) return true;
+    tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    return false;
+  }, []);
+  // An arrow that appears narrows the strip and can clip the active tab again,
+  // so after a tab change the tab is revealed until it fits. The user scrolling
+  // the strip ends this, so it never pulls the strip back under them.
+  const revealPending = useRef(false);
+  const stopReveal = () => { revealPending.current = false; };
   useEffect(() => {
-    navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    revealPending.current = true;
+    revealActive();
     measure();
-  }, [active, measure]);
-  const scrollBy = (direction) => navRef.current?.scrollBy({ left: direction * navRef.current.clientWidth * 0.6, behavior: 'smooth' });
+  }, [active, measure, revealActive]);
+  useEffect(() => {
+    if (!revealPending.current) return;
+    if (revealActive()) revealPending.current = false;
+    else measure();
+  }, [overflow.left, overflow.right, measure, revealActive]);
+  const scrollBy = (direction) => { stopReveal(); navRef.current?.scrollBy({ left: direction * navRef.current.clientWidth * 0.6, behavior: 'smooth' }); };
   const cue = (side) => <div aria-hidden="true" className="flex shrink-0 items-center">
     <button className="flex h-7 w-7 items-center justify-center rounded-full border border-line-strong bg-surface text-ink shadow-raised" onClick={() => scrollBy(side === 'left' ? -1 : 1)} tabIndex={-1} type="button"><Icon className={side === 'left' ? 'rotate-180' : ''} name="chevron" size={15} /></button>
   </div>;
   return <div className="flex items-center gap-1">
     {overflow.left && cue('left')}
-    <nav aria-label="Kit sections" className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" onScroll={measure} ref={navRef}>{tabs.map(([id, label]) => <button aria-current={active === id ? 'page' : undefined} className={`whitespace-nowrap border-b-2 px-3 py-3.5 text-sm font-medium transition ${active === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-muted hover:border-line-strong hover:text-ink'}`} key={id} onClick={() => onSection(id)} type="button">{label}</button>)}</nav>
+    <nav aria-label="Kit sections" className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" onPointerDown={stopReveal} onScroll={measure} onTouchStart={stopReveal} onWheel={stopReveal} ref={navRef}>{tabs.map(([id, label]) => <button aria-current={active === id ? 'page' : undefined} className={`whitespace-nowrap border-b-2 px-3 py-3.5 text-sm font-medium transition ${active === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-muted hover:border-line-strong hover:text-ink'}`} key={id} onClick={() => onSection(id)} type="button">{label}</button>)}</nav>
     {overflow.right && cue('right')}
   </div>;
 }
