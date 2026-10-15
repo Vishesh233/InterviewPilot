@@ -1,0 +1,1338 @@
+{
+  "generatedAt": "2026-10-15T16:52:30.829Z",
+  "kits": [
+    {
+      "slug": "frontend-developer-vercel",
+      "createdAt": "2026-10-15T12:31:28.408Z",
+      "source": {
+        "jobRole": "Frontend Developer",
+        "jobDescription": "Frontend Developer (React / Next.js) - Mid Level\n\nWe are hiring a Frontend Developer to build fast, accessible customer-facing web applications. You will work closely with designers and backend engineers and ship features end to end.\n\nResponsibilities:\n- Build and maintain UI features in React and TypeScript with Next.js (App Router and server-side rendering).\n- Integrate REST APIs, handle loading and error states, and manage client-side state.\n- Write unit and integration tests with Jest and React Testing Library, and end-to-end tests with Playwright.\n- Meet WCAG 2.1 AA accessibility: semantic HTML, keyboard navigation and screen-reader support.\n- Improve performance: Core Web Vitals, code splitting, image optimization and bundle size.\n- Take part in code reviews and CI workflows using Git.\n\nRequirements:\n- 3+ years of professional experience with React and modern JavaScript.\n- Strong TypeScript, HTML and CSS skills.\n- Experience consuming and debugging REST APIs.\n- Solid automated testing habits.\n\nNice to have: Tailwind CSS, design systems, GraphQL.",
+        "companyUrl": "https://vercel.com",
+        "interviewDays": 7
+      },
+      "company_brief": {
+        "name": "Vercel",
+        "summary": "Vercel provides a platform for building, deploying, and scaling web applications and AI agents. The infrastructure includes global delivery, serverless functions, and CI/CD tools designed to help teams ship production-grade software. It supports a wide range of use cases, from individual projects to large-scale platforms, by managing the complexity of modern web development and deployment.",
+        "about": "Vercel provides a platform for building, deploying, and scaling web applications and AI agents. The infrastructure includes global delivery, serverless functions, and CI/CD tools designed to help teams ship production-grade software. It supports a wide range of use cases, from individual projects to large-scale platforms, by managing the complexity of modern web development and deployment.",
+        "offerings": [
+          "Core platform for web application deployment and global content delivery",
+          "Serverless functions and Fluid Compute for scaling web workloads",
+          "CI/CD workflows and tools for building web applications and agents"
+        ],
+        "roleRelevance": [
+          "This role involves using Next.js to build high-performance, accessible frontend interfaces on Vercel's infrastructure.",
+          "The position aligns with Vercel's focus on optimizing performance, testing, and shipping features through efficient CI/CD processes."
+        ],
+        "sources": [
+          {
+            "url": "https://vercel.com/",
+            "title": "Agentic Infrastructure - Vercel"
+          },
+          {
+            "url": "https://vercel.com/careers",
+            "title": "Careers"
+          }
+        ]
+      },
+      "role": {
+        "title": "Frontend Developer",
+        "level": "mid",
+        "yearsExperience": "3+ years",
+        "requirements": [
+          {
+            "id": "React",
+            "kind": "must_have"
+          },
+          {
+            "id": "TypeScript",
+            "kind": "must_have"
+          },
+          {
+            "id": "Next.js",
+            "kind": "must_have"
+          },
+          {
+            "id": "REST APIs",
+            "kind": "must_have"
+          },
+          {
+            "id": "Jest",
+            "kind": "must_have"
+          },
+          {
+            "id": "React Testing Library",
+            "kind": "must_have"
+          },
+          {
+            "id": "Playwright",
+            "kind": "must_have"
+          },
+          {
+            "id": "Git",
+            "kind": "must_have"
+          },
+          {
+            "id": "HTML",
+            "kind": "must_have"
+          },
+          {
+            "id": "CSS",
+            "kind": "must_have"
+          },
+          {
+            "id": "JavaScript",
+            "kind": "must_have"
+          },
+          {
+            "id": "WCAG",
+            "kind": "must_have"
+          },
+          {
+            "id": "Core Web Vitals",
+            "kind": "must_have"
+          },
+          {
+            "id": "Tailwind CSS",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "design systems",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "GraphQL",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "Build and maintain UI features in React and TypeScript with Next.js (App Router and server-side rendering)",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Integrate REST APIs, handle loading and error states, and manage client-side state",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Write unit and integration tests with Jest and React Testing Library, and end-to-end tests with Playwright",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Meet WCAG 2.1 AA accessibility: semantic HTML, keyboard navigation and screen-reader support",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Improve performance: Core Web Vitals, code splitting, image optimization and bundle size",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Take part in code reviews and CI workflows using Git",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Experience consuming and debugging REST APIs",
+            "kind": "qualification"
+          },
+          {
+            "id": "Solid automated testing habits",
+            "kind": "qualification"
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q1",
+          "question": "Vercel's platform emphasizes building applications that scale from zero to millions. How do you approach optimizing Core Web Vitals in a Next.js application, specifically regarding the App Router?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Performance is a critical aspect of Vercel's infrastructure; understanding how to optimize Next.js apps directly relates to their value proposition.",
+          "expectedAnswerPoints": [
+            "Mentioning tools for measuring Core Web Vitals (Lighthouse, Web Vitals library).",
+            "Strategies for code splitting and using dynamic imports.",
+            "Optimizing images using the next/image component.",
+            "Leveraging Server Components to reduce client-side JavaScript bundle size.",
+            "Effective use of caching and revalidation strategies in the App Router."
+          ],
+          "followUps": [
+            "How do you prioritize which Core Web Vitals to fix first?",
+            "Can you describe a time you reduced bundle size significantly?"
+          ],
+          "sources": [
+            "https://vercel.com/"
+          ],
+          "requirementRefs": [
+            "Next.js",
+            "Improve performance: Core Web Vitals, code splitting, image optimization and bundle size",
+            "Build and maintain UI features in React and TypeScript with Next.js (App Router and server-side rendering)"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q2",
+          "question": "Given Vercel's commitment to accessibility, how do you ensure a complex UI component meets WCAG 2.1 AA standards?",
+          "category": "role_specific",
+          "difficulty": "medium",
+          "why": "The requirement specifically lists WCAG 2.1 AA, indicating it is a standard expected for Vercel's frontend engineers.",
+          "expectedAnswerPoints": [
+            "Use of semantic HTML elements instead of generic divs.",
+            "Implementing ARIA labels where semantic HTML is insufficient.",
+            "Testing for keyboard navigation (tabbing, focus management).",
+            "Using screen readers to verify content accessibility.",
+            "Handling color contrast and focus indicators via CSS."
+          ],
+          "followUps": [
+            "How do you incorporate accessibility testing into your automated CI workflow?",
+            "What is your approach to handling dynamic content updates for screen readers?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "WCAG",
+            "Meet WCAG 2.1 AA accessibility: semantic HTML, keyboard navigation and screen-reader support"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q3",
+          "question": "How do you manage complex client-side state when integrating with REST APIs, and what strategies do you use for error handling?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "This tests practical application of REST API integration and state management skills listed in the requirements.",
+          "expectedAnswerPoints": [
+            "Using React hooks (useState, useReducer) or libraries like TanStack Query for server state.",
+            "Handling loading states (skeletons, spinners) to improve UX.",
+            "Implementing robust error boundaries or error state UI components.",
+            "Strategies for optimistic updates or revalidation.",
+            "Structuring API calls to keep components clean and maintainable."
+          ],
+          "followUps": [
+            "How do you handle API request cancellation if a user navigates away?",
+            "When would you choose GraphQL over REST for a new feature?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "REST APIs",
+            "Integrate REST APIs, handle loading and error states, and manage client-side state",
+            "Experience consuming and debugging REST APIs"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q4",
+          "question": "Describe your strategy for writing effective end-to-end tests for a Next.js application. How do you balance this with unit testing?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "The requirement highlights the need for a comprehensive testing strategy using Jest, RTL, and Playwright.",
+          "expectedAnswerPoints": [
+            "Using Jest and React Testing Library for isolated component logic and edge cases.",
+            "Using Playwright for critical user paths (auth, navigation, form submissions).",
+            "Maintaining a fast CI loop by keeping unit tests decoupled from integration tests.",
+            "Focusing tests on user-visible behavior rather than internal implementation details.",
+            "Mocking API responses for reliable test environments."
+          ],
+          "followUps": [
+            "How do you handle testing components that rely heavily on server-side rendering?",
+            "How do you debug a flaky Playwright test in a CI environment?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Jest",
+            "React Testing Library",
+            "Playwright",
+            "Write unit and integration tests with Jest and React Testing Library, and end-to-end tests with Playwright",
+            "Solid automated testing habits"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q5",
+          "question": "How do you optimize a complex React application to improve Core Web Vitals, and what specific metrics do you prioritize in a Vercel-hosted environment?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "Vercel's product suite focuses on performance and deployment; knowing how to measure and improve metrics directly relates to shipping performant apps.",
+          "expectedAnswerPoints": [
+            "Explanation of Core Web Vitals (LCP, INP, CLS).",
+            "Techniques such as code splitting, lazy loading, and memoization in React.",
+            "Usage of Next.js Image component or similar for LCP optimization.",
+            "How Vercel's Web Vitals dashboard or analytics helps monitor these in production."
+          ],
+          "followUps": [
+            "How would you diagnose a sudden drop in INP (Interaction to Next Paint) in your application?",
+            "What role does component-level code splitting play in your strategy?"
+          ],
+          "sources": [
+            "https://vercel.com/"
+          ],
+          "requirementRefs": [
+            "React",
+            "Core Web Vitals"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q6",
+          "question": "Describe your workflow for conducting effective code reviews, specifically when integrating new features into a CI/CD pipeline using Git.",
+          "category": "behavioral",
+          "difficulty": "medium",
+          "why": "Vercel emphasizes shipping and CI/CD tools, making code quality and efficient workflows critical for a mid-level engineer.",
+          "expectedAnswerPoints": [
+            "The importance of meaningful commit messages and atomic PRs.",
+            "Focusing on code maintainability, testing coverage, and TypeScript type safety during reviews.",
+            "How CI/CD integration automates checks (linting, tests) before a merge.",
+            "Constructive feedback strategies for peer review."
+          ],
+          "followUps": [
+            "How do you handle disagreements on code style or implementation choices during a review?",
+            "What specific Git strategies (e.g., rebase vs merge) do you prefer for maintaining a clean history?"
+          ],
+          "sources": [
+            "https://vercel.com/"
+          ],
+          "requirementRefs": [
+            "Git",
+            "Take part in code reviews and CI workflows using Git",
+            "TypeScript"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q7",
+          "question": "How do you manage global state and data fetching when using GraphQL in a large-scale React application?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Frontend developers at Vercel often deal with high-performance data fetching scenarios.",
+          "expectedAnswerPoints": [
+            "Approaches for caching data (e.g., Apollo Client caching or React Query).",
+            "Managing loading and error states effectively.",
+            "Benefits of GraphQL fragments for component reusability.",
+            "Minimizing over-fetching and under-fetching."
+          ],
+          "followUps": [
+            "What are the trade-offs between REST and GraphQL for the types of apps built on Vercel?",
+            "How do you handle schema changes between the backend and frontend teams?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "React",
+            "GraphQL"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q8",
+          "question": "When implementing a design system, how do you balance the use of utility-first CSS like Tailwind CSS with semantic HTML and maintainable component structures?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Design systems are essential for consistency, and understanding how to structure them is key for frontend scalability.",
+          "expectedAnswerPoints": [
+            "Encapsulating utility classes within reusable React components.",
+            "Maintaining accessibility standards within custom UI components.",
+            "Creating a shared token system (colors, spacing) in Tailwind configuration.",
+            "The benefit of semantic HTML for SEO and screen readers."
+          ],
+          "followUps": [
+            "How do you prevent 'class bloat' in your HTML when using Tailwind?",
+            "What documentation strategies do you use for design systems?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Tailwind CSS",
+            "design systems",
+            "HTML",
+            "CSS",
+            "React"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q9",
+          "question": "TypeScript offers several advanced features for type safety. Can you explain when you would use mapped types or conditional types to build more robust components?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "Mid-level developers are expected to handle complex TypeScript scenarios to ensure type safety in shared codebases.",
+          "expectedAnswerPoints": [
+            "Ability to explain the utility of mapped types for transforming existing types.",
+            "When conditional types are necessary for dynamic prop handling.",
+            "How these improve developer experience and reduce runtime errors in React.",
+            "Providing a concrete example of a type-safe generic component."
+          ],
+          "followUps": [
+            "How do you approach refactoring untyped JavaScript legacy code into TypeScript?",
+            "What is the best way to handle 'any' types in a large codebase?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "TypeScript",
+            "JavaScript",
+            "React"
+          ],
+          "status": "generated",
+          "pinned": false
+        }
+      ],
+      "flashcards": [
+        {
+          "id": "f1",
+          "front": "Vercel's platform emphasizes building applications that scale from zero to millions. How do you approach optimizing Core Web Vitals in a Next.js application, specifically regarding the App Router?",
+          "back": "Mentioning tools for measuring Core Web Vitals (Lighthouse, Web Vitals library).\nStrategies for code splitting and using dynamic imports.\nOptimizing images using the next/image component.\nLeveraging Server Components to reduce client-side JavaScript bundle size.\nEffective use of caching and revalidation strategies in the App Router.\nHow do you prioritize which Core Web Vitals to fix first?\nCan you describe a time you reduced bundle size significantly?",
+          "questionIds": [
+            "q1"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f2",
+          "front": "Given Vercel's commitment to accessibility, how do you ensure a complex UI component meets WCAG 2.1 AA standards?",
+          "back": "Use of semantic HTML elements instead of generic divs.\nImplementing ARIA labels where semantic HTML is insufficient.\nTesting for keyboard navigation (tabbing, focus management).\nUsing screen readers to verify content accessibility.\nHandling color contrast and focus indicators via CSS.\nHow do you incorporate accessibility testing into your automated CI workflow?\nWhat is your approach to handling dynamic content updates for screen readers?",
+          "questionIds": [
+            "q2"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f3",
+          "front": "How do you manage complex client-side state when integrating with REST APIs, and what strategies do you use for error handling?",
+          "back": "Using React hooks (useState, useReducer) or libraries like TanStack Query for server state.\nHandling loading states (skeletons, spinners) to improve UX.\nImplementing robust error boundaries or error state UI components.\nStrategies for optimistic updates or revalidation.\nStructuring API calls to keep components clean and maintainable.\nHow do you handle API request cancellation if a user navigates away?\nWhen would you choose GraphQL over REST for a new feature?",
+          "questionIds": [
+            "q3"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f4",
+          "front": "Describe your strategy for writing effective end-to-end tests for a Next.js application. How do you balance this with unit testing?",
+          "back": "Using Jest and React Testing Library for isolated component logic and edge cases.\nUsing Playwright for critical user paths (auth, navigation, form submissions).\nMaintaining a fast CI loop by keeping unit tests decoupled from integration tests.\nFocusing tests on user-visible behavior rather than internal implementation details.\nMocking API responses for reliable test environments.\nHow do you handle testing components that rely heavily on server-side rendering?\nHow do you debug a flaky Playwright test in a CI environment?",
+          "questionIds": [
+            "q4"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f5",
+          "front": "How do you optimize a complex React application to improve Core Web Vitals, and what specific metrics do you prioritize in a Vercel-hosted environment?",
+          "back": "Explanation of Core Web Vitals (LCP, INP, CLS).\nTechniques such as code splitting, lazy loading, and memoization in React.\nUsage of Next.js Image component or similar for LCP optimization.\nHow Vercel's Web Vitals dashboard or analytics helps monitor these in production.\nHow would you diagnose a sudden drop in INP (Interaction to Next Paint) in your application?\nWhat role does component-level code splitting play in your strategy?",
+          "questionIds": [
+            "q5"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f6",
+          "front": "Describe your workflow for conducting effective code reviews, specifically when integrating new features into a CI/CD pipeline using Git.",
+          "back": "The importance of meaningful commit messages and atomic PRs.\nFocusing on code maintainability, testing coverage, and TypeScript type safety during reviews.\nHow CI/CD integration automates checks (linting, tests) before a merge.\nConstructive feedback strategies for peer review.\nHow do you handle disagreements on code style or implementation choices during a review?\nWhat specific Git strategies (e.g., rebase vs merge) do you prefer for maintaining a clean history?",
+          "questionIds": [
+            "q6"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f7",
+          "front": "How do you manage global state and data fetching when using GraphQL in a large-scale React application?",
+          "back": "Approaches for caching data (e.g., Apollo Client caching or React Query).\nManaging loading and error states effectively.\nBenefits of GraphQL fragments for component reusability.\nMinimizing over-fetching and under-fetching.\nWhat are the trade-offs between REST and GraphQL for the types of apps built on Vercel?\nHow do you handle schema changes between the backend and frontend teams?",
+          "questionIds": [
+            "q7"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f8",
+          "front": "When implementing a design system, how do you balance the use of utility-first CSS like Tailwind CSS with semantic HTML and maintainable component structures?",
+          "back": "Encapsulating utility classes within reusable React components.\nMaintaining accessibility standards within custom UI components.\nCreating a shared token system (colors, spacing) in Tailwind configuration.\nThe benefit of semantic HTML for SEO and screen readers.\nHow do you prevent 'class bloat' in your HTML when using Tailwind?\nWhat documentation strategies do you use for design systems?",
+          "questionIds": [
+            "q8"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f9",
+          "front": "TypeScript offers several advanced features for type safety. Can you explain when you would use mapped types or conditional types to build more robust components?",
+          "back": "Ability to explain the utility of mapped types for transforming existing types.\nWhen conditional types are necessary for dynamic prop handling.\nHow these improve developer experience and reduce runtime errors in React.\nProviding a concrete example of a type-safe generic component.\nHow do you approach refactoring untyped JavaScript legacy code into TypeScript?\nWhat is the best way to handle 'any' types in a large codebase?",
+          "questionIds": [
+            "q9"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        }
+      ],
+      "schedule": {
+        "interviewDays": 7,
+        "days": [
+          {
+            "day": 1,
+            "questions": [
+              "q1",
+              "q2"
+            ]
+          },
+          {
+            "day": 2,
+            "questions": [
+              "q3",
+              "q4"
+            ]
+          },
+          {
+            "day": 3,
+            "questions": [
+              "q5"
+            ]
+          },
+          {
+            "day": 4,
+            "questions": [
+              "q6"
+            ]
+          },
+          {
+            "day": 5,
+            "questions": [
+              "q7"
+            ]
+          },
+          {
+            "day": 6,
+            "questions": [
+              "q8"
+            ]
+          },
+          {
+            "day": 7,
+            "questions": [
+              "q9"
+            ]
+          }
+        ]
+      },
+      "coverage": {
+        "coveredRequirements": [
+          "React",
+          "TypeScript",
+          "Next.js",
+          "REST APIs",
+          "Jest",
+          "React Testing Library",
+          "Playwright",
+          "Git",
+          "HTML",
+          "CSS",
+          "JavaScript",
+          "WCAG",
+          "Core Web Vitals",
+          "Tailwind CSS",
+          "design systems",
+          "GraphQL",
+          "Build and maintain UI features in React and TypeScript with Next.js (App Router and server-side rendering)",
+          "Integrate REST APIs, handle loading and error states, and manage client-side state",
+          "Write unit and integration tests with Jest and React Testing Library, and end-to-end tests with Playwright",
+          "Meet WCAG 2.1 AA accessibility: semantic HTML, keyboard navigation and screen-reader support",
+          "Improve performance: Core Web Vitals, code splitting, image optimization and bundle size",
+          "Take part in code reviews and CI workflows using Git",
+          "Experience consuming and debugging REST APIs",
+          "Solid automated testing habits"
+        ],
+        "missingRequirements": [],
+        "coveragePercent": 100
+      }
+    },
+    {
+      "slug": "backend-developer-node-js-stripe",
+      "createdAt": "2026-10-15T12:32:11.773Z",
+      "source": {
+        "jobRole": "Backend Developer (Node.js)",
+        "jobDescription": "Backend Developer (Node.js) - Mid Level\n\nJoin our platform team to design and run the APIs that power our product for thousands of customers.\n\nResponsibilities:\n- Design, build and maintain REST APIs with Node.js, Express and TypeScript.\n- Model data in PostgreSQL and MongoDB, write efficient queries and manage migrations.\n- Implement authentication and authorization with JWT and OAuth 2.0.\n- Build background processing with message queues such as Redis or RabbitMQ.\n- Containerize services with Docker and deploy them to AWS (ECS, Lambda, S3).\n- Write unit and integration tests with Jest and keep CI pipelines green.\n- Add logging, metrics and tracing, and take part in the on-call rotation.\n\nRequirements:\n- 3+ years of professional backend experience with Node.js.\n- Strong understanding of REST API design, HTTP and security best practices.\n- Experience with relational and document databases.\n- Familiarity with Git and code reviews.\n\nNice to have: GraphQL, Kubernetes, Terraform.",
+        "companyUrl": "https://stripe.com",
+        "interviewDays": 7
+      },
+      "company_brief": {
+        "name": "Stripe",
+        "summary": "Stripe is a financial services platform that enables businesses to accept payments, manage money movement, and implement flexible billing models. The company provides economic infrastructure for internet commerce, supporting various business types ranging from startups to large enterprises in managing global transactions and financial operations.",
+        "about": "Stripe is a financial services platform that enables businesses to accept payments, manage money movement, and implement flexible billing models. The company provides economic infrastructure for internet commerce, supporting various business types ranging from startups to large enterprises in managing global transactions and financial operations.",
+        "offerings": [
+          "Payment processing and online checkout infrastructure.",
+          "Financial tools for billing, invoicing, and tax automation.",
+          "Financial operating systems for platforms and marketplaces."
+        ],
+        "roleRelevance": [
+          "The role involves designing REST APIs and managing data to support the platforms that power Stripe's transaction processing."
+        ],
+        "sources": [
+          {
+            "url": "https://stripe.com/en-sg",
+            "title": "Stripe | Financial Infrastructure to Grow Your Revenue"
+          },
+          {
+            "url": "https://stripe.com/en-sg/careers",
+            "title": "Stripe Careers | Shape the Future of the Global Economy"
+          },
+          {
+            "url": "https://stripe.com/en-sg/customers/jobber",
+            "title": "Jobber Expands With New Financial Products | Stripe"
+          }
+        ]
+      },
+      "role": {
+        "title": "Backend Developer (Node.js)",
+        "level": "mid",
+        "yearsExperience": "3+ years",
+        "requirements": [
+          {
+            "id": "Node.js",
+            "kind": "must_have"
+          },
+          {
+            "id": "Express",
+            "kind": "must_have"
+          },
+          {
+            "id": "TypeScript",
+            "kind": "must_have"
+          },
+          {
+            "id": "PostgreSQL",
+            "kind": "must_have"
+          },
+          {
+            "id": "MongoDB",
+            "kind": "must_have"
+          },
+          {
+            "id": "JWT",
+            "kind": "must_have"
+          },
+          {
+            "id": "OAuth 2.0",
+            "kind": "must_have"
+          },
+          {
+            "id": "Redis",
+            "kind": "must_have"
+          },
+          {
+            "id": "RabbitMQ",
+            "kind": "must_have"
+          },
+          {
+            "id": "Docker",
+            "kind": "must_have"
+          },
+          {
+            "id": "AWS",
+            "kind": "must_have"
+          },
+          {
+            "id": "ECS",
+            "kind": "must_have"
+          },
+          {
+            "id": "Lambda",
+            "kind": "must_have"
+          },
+          {
+            "id": "S3",
+            "kind": "must_have"
+          },
+          {
+            "id": "Jest",
+            "kind": "must_have"
+          },
+          {
+            "id": "Git",
+            "kind": "must_have"
+          },
+          {
+            "id": "REST",
+            "kind": "must_have"
+          },
+          {
+            "id": "GraphQL",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "Kubernetes",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "Terraform",
+            "kind": "nice_to_have"
+          },
+          {
+            "id": "Design, build and maintain REST APIs",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Model data, write efficient queries and manage migrations",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Implement authentication and authorization",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Build background processing with message queues",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Containerize services and deploy them to AWS",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Write unit and integration tests and keep CI pipelines green",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Add logging, metrics and tracing",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Take part in the on-call rotation",
+            "kind": "responsibility"
+          },
+          {
+            "id": "Strong understanding of REST API design, HTTP and security best practices",
+            "kind": "qualification"
+          },
+          {
+            "id": "Experience with relational and document databases",
+            "kind": "qualification"
+          },
+          {
+            "id": "Familiarity with code reviews",
+            "kind": "qualification"
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q1",
+          "question": "How would you design a robust background processing system using RabbitMQ to handle high-volume financial transaction notifications, ensuring no messages are lost?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "Stripe processes massive transaction volumes; understanding reliability in message queues is critical for maintaining financial data integrity.",
+          "expectedAnswerPoints": [
+            "Implementation of acknowledgement patterns (manual acks) to ensure message processing completion.",
+            "Usage of persistent queues and durable exchanges to survive broker restarts.",
+            "Designing idempotency into consumers to handle potential duplicate deliveries.",
+            "Implementing dead-letter exchanges for error handling and observability."
+          ],
+          "followUps": [
+            "How would you monitor the queue depth in a production environment?",
+            "What strategies would you use to handle 'poison pill' messages?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg"
+          ],
+          "requirementRefs": [
+            "Build background processing with message queues",
+            "RabbitMQ"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q2",
+          "question": "In a distributed Node.js system, how do you ensure zero-downtime database migrations when updating schema in PostgreSQL?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Data integrity and availability are paramount at Stripe; understanding safe migration patterns is a core requirement for a mid-level engineer.",
+          "expectedAnswerPoints": [
+            "Adopting an expand/contract migration pattern (e.g., adding nullable columns first, then migrating data).",
+            "Utilizing migration tools compatible with TypeORM or similar TypeScript ORMs.",
+            "Avoiding long-running transactions that lock tables during peak traffic hours.",
+            "Verifying backward compatibility between the application code and database schema before deployment."
+          ],
+          "followUps": [
+            "How do you roll back a migration that has already been executed in production?",
+            "How do you handle migrations when using read replicas?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg/careers"
+          ],
+          "requirementRefs": [
+            "Model data, write efficient queries and manage migrations",
+            "PostgreSQL",
+            "TypeScript"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q3",
+          "question": "Stripe maintains 99.999% uptime. How would you approach designing a Node.js REST API that needs to scale dynamically while ensuring high availability?",
+          "category": "role_specific",
+          "difficulty": "hard",
+          "why": "Requires balancing architectural design with the company's specific uptime goals.",
+          "expectedAnswerPoints": [
+            "Implementation of proper rate limiting to prevent cascading failures.",
+            "Usage of caching strategies with Redis to reduce backend database load.",
+            "Proper implementation of logging, metrics, and tracing to quickly identify bottlenecks.",
+            "Designing for failure using health checks and circuit breakers."
+          ],
+          "followUps": [
+            "How would you determine the appropriate cache expiration for financial data?",
+            "What tools would you suggest for tracing requests across microservices?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg"
+          ],
+          "requirementRefs": [
+            "Design, build and maintain REST APIs",
+            "Redis",
+            "Add logging, metrics and tracing"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q4",
+          "question": "When implementing OAuth 2.0 and JWT in a microservices architecture, how do you handle token validation and security without introducing latency?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Essential for securing financial services and complying with security best practices.",
+          "expectedAnswerPoints": [
+            "Using asymmetric signing (RS256) to allow services to validate JWTs locally without hitting the Auth server.",
+            "Implementing a centralized token revocation list or short-lived access tokens with rotation.",
+            "Securing sensitive data by not including it in the JWT payload.",
+            "Ensuring transport-level security (HTTPS) is enforced."
+          ],
+          "followUps": [
+            "How would you handle user session invalidation if a token is compromised?",
+            "What is the difference between OAuth 2.0 scopes and role-based access control?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Implement authentication and authorization",
+            "JWT",
+            "OAuth 2.0"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q5",
+          "question": "Describe your approach to handling an on-call incident where a critical service is failing in production. How do you balance immediate fixes with the need for post-mortem analysis?",
+          "category": "behavioral",
+          "difficulty": "medium",
+          "why": "Candidates must demonstrate maturity and responsibility regarding the on-call rotation requirement.",
+          "expectedAnswerPoints": [
+            "Prioritizing system recovery (mitigation) over root cause analysis during the active incident.",
+            "Using logging, metrics, and tracing to identify the blast radius and cause.",
+            "Focusing on blameless post-mortems to improve systems, not individuals.",
+            "Documenting findings and creating follow-up tickets to address technical debt."
+          ],
+          "followUps": [
+            "How do you keep CI/CD pipelines green while pushing emergency fixes?",
+            "What is your strategy for communicating with stakeholders during a major outage?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg/careers"
+          ],
+          "requirementRefs": [
+            "Take part in the on-call rotation",
+            "Add logging, metrics and tracing",
+            "Write unit and integration tests and keep CI pipelines green"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q6",
+          "question": "When designing a secure REST API for financial services, how do you implement HTTP best practices to protect sensitive transaction data?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "Stripe processes massive transaction volumes; understanding the intersection of REST API design and security is critical for maintaining the high reliability mentioned in their documentation.",
+          "expectedAnswerPoints": [
+            "Use of TLS/HTTPS for all data in transit",
+            "Implementation of OAuth2 or API key-based authentication with proper scoping",
+            "Use of HSTS, rate limiting, and input validation to prevent common attacks like XSS or SQL injection",
+            "Proper use of HTTP status codes to provide actionable feedback without leaking internal system details"
+          ],
+          "followUps": [
+            "How would you handle idempotency for payment requests to prevent double charging?",
+            "How do you ensure backward compatibility when changing API schemas?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg"
+          ],
+          "requirementRefs": [
+            "Strong understanding of REST API design, HTTP and security best practices"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q7",
+          "question": "Walk us through your process for containerizing a Node.js service using Docker and preparing it for deployment to AWS ECS.",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "This covers the operational capability to deploy services in a cloud environment, which aligns with Stripe's focus on scalability and reliable infrastructure.",
+          "expectedAnswerPoints": [
+            "Creating an optimized Dockerfile (using multi-stage builds for smaller image sizes)",
+            "Configuring environment variables and secrets management",
+            "Defining task definitions and service configurations for ECS",
+            "Monitoring and logging strategy within the AWS ecosystem"
+          ],
+          "followUps": [
+            "How do you manage dependency versions to ensure reproducible builds?",
+            "What strategies do you use to reduce deployment downtime?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg/careers"
+          ],
+          "requirementRefs": [
+            "Docker",
+            "ECS",
+            "AWS",
+            "Containerize services and deploy them to AWS"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q8",
+          "question": "Given the complexities of financial data, how do you determine when a document database like MongoDB is appropriate versus a relational database?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Stripe needs engineers who can make trade-offs regarding data storage depending on the business use case.",
+          "expectedAnswerPoints": [
+            "Discussion on ACID compliance needs vs. horizontal scalability requirements",
+            "Use of document stores for flexible, schema-less data (e.g., metadata, user logs)",
+            "Use of relational databases for transactional integrity and complex relationships",
+            "Considerations for data consistency models"
+          ],
+          "followUps": [
+            "How do you handle migrations in a MongoDB collection without downtime?",
+            "How do you model relationships in MongoDB compared to a SQL database?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Experience with relational and document databases",
+            "MongoDB"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q9",
+          "question": "What is your philosophy on conducting code reviews, and what are you specifically looking for beyond just passing tests?",
+          "category": "behavioral",
+          "difficulty": "medium",
+          "why": "Stripe emphasizes 'craftsmanship' in their culture; assessing how a candidate upholds code quality is essential.",
+          "expectedAnswerPoints": [
+            "Focus on maintainability, readability, and design patterns",
+            "Ensuring edge cases are handled and tests (Jest) are adequate",
+            "Constructive feedback loop rather than just finding errors",
+            "Checking for adherence to security and performance standards"
+          ],
+          "followUps": [
+            "How do you handle a situation where you disagree with a teammate's coding approach?",
+            "How do you balance the need for speed with the need for high-quality code?"
+          ],
+          "sources": [
+            "https://stripe.com/en-sg/careers"
+          ],
+          "requirementRefs": [
+            "Familiarity with code reviews",
+            "Jest"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q10",
+          "question": "In what specific architectural scenarios would you favor using GraphQL over REST, and how do you optimize performance in those scenarios?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "GraphQL is used for flexible data fetching; understanding the 'why' is key for backend API design.",
+          "expectedAnswerPoints": [
+            "Scenario: Reducing over-fetching and under-fetching of data",
+            "Scenario: Aggregating data from multiple microservices",
+            "Performance: Implementing Dataloader or similar patterns to solve N+1 problems",
+            "Security: Implementing depth limiting and query cost analysis"
+          ],
+          "followUps": [
+            "How do you manage versioning in a GraphQL schema compared to REST?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "GraphQL"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q11",
+          "question": "How have you utilized Terraform to automate infrastructure provisioning for Kubernetes clusters?",
+          "category": "technical",
+          "difficulty": "hard",
+          "why": "Infrastructure as Code is vital for scaling, and Stripe's complex infrastructure requires knowledge of tools like Terraform.",
+          "expectedAnswerPoints": [
+            "State management and backend configuration",
+            "Modularizing code for reusability across environments (dev/prod)",
+            "Managing Kubernetes manifests or Helm charts via Terraform providers",
+            "Plan/Apply workflow and risk mitigation"
+          ],
+          "followUps": [
+            "How do you handle drift between your Terraform code and actual infrastructure state?",
+            "How do you integrate Terraform into a CI/CD pipeline?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Terraform",
+            "Kubernetes"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q12",
+          "question": "When building an Express application, how do you handle asynchronous error propagation effectively across your middleware stack?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "Robust error handling in Node.js/Express is a foundational requirement for building reliable services.",
+          "expectedAnswerPoints": [
+            "Using centralized error-handling middleware",
+            "Proper use of try/catch blocks with async/await",
+            "Ensuring unexpected crashes are caught to prevent server termination",
+            "Logging errors with context for observability"
+          ],
+          "followUps": [
+            "What patterns do you use to ensure you don't leak stack traces in production?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "Node.js",
+            "Express"
+          ],
+          "status": "generated",
+          "pinned": false
+        },
+        {
+          "id": "q13",
+          "question": "Describe a scenario where you integrated AWS Lambda into a larger microservices architecture. What was the use case and the outcome?",
+          "category": "technical",
+          "difficulty": "medium",
+          "why": "AWS Lambda is a key serverless component; understanding its role in a broader system is helpful.",
+          "expectedAnswerPoints": [
+            "Use case: Event-driven processing or async background tasks",
+            "Integration with other AWS services (e.g., S3 triggers)",
+            "Considerations for cold starts and execution time limits",
+            "Monitoring via CloudWatch"
+          ],
+          "followUps": [
+            "How do you test Lambda functions locally?"
+          ],
+          "sources": [],
+          "requirementRefs": [
+            "AWS",
+            "Lambda",
+            "S3"
+          ],
+          "status": "generated",
+          "pinned": false
+        }
+      ],
+      "flashcards": [
+        {
+          "id": "f1",
+          "front": "How would you design a robust background processing system using RabbitMQ to handle high-volume financial transaction notifications, ensuring no messages are lost?",
+          "back": "Implementation of acknowledgement patterns (manual acks) to ensure message processing completion.\nUsage of persistent queues and durable exchanges to survive broker restarts.\nDesigning idempotency into consumers to handle potential duplicate deliveries.\nImplementing dead-letter exchanges for error handling and observability.\nHow would you monitor the queue depth in a production environment?\nWhat strategies would you use to handle 'poison pill' messages?",
+          "questionIds": [
+            "q1"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f2",
+          "front": "In a distributed Node.js system, how do you ensure zero-downtime database migrations when updating schema in PostgreSQL?",
+          "back": "Adopting an expand/contract migration pattern (e.g., adding nullable columns first, then migrating data).\nUtilizing migration tools compatible with TypeORM or similar TypeScript ORMs.\nAvoiding long-running transactions that lock tables during peak traffic hours.\nVerifying backward compatibility between the application code and database schema before deployment.\nHow do you roll back a migration that has already been executed in production?\nHow do you handle migrations when using read replicas?",
+          "questionIds": [
+            "q2"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f3",
+          "front": "Stripe maintains 99.999% uptime. How would you approach designing a Node.js REST API that needs to scale dynamically while ensuring high availability?",
+          "back": "Implementation of proper rate limiting to prevent cascading failures.\nUsage of caching strategies with Redis to reduce backend database load.\nProper implementation of logging, metrics, and tracing to quickly identify bottlenecks.\nDesigning for failure using health checks and circuit breakers.\nHow would you determine the appropriate cache expiration for financial data?\nWhat tools would you suggest for tracing requests across microservices?",
+          "questionIds": [
+            "q3"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f4",
+          "front": "When implementing OAuth 2.0 and JWT in a microservices architecture, how do you handle token validation and security without introducing latency?",
+          "back": "Using asymmetric signing (RS256) to allow services to validate JWTs locally without hitting the Auth server.\nImplementing a centralized token revocation list or short-lived access tokens with rotation.\nSecuring sensitive data by not including it in the JWT payload.\nEnsuring transport-level security (HTTPS) is enforced.\nHow would you handle user session invalidation if a token is compromised?\nWhat is the difference between OAuth 2.0 scopes and role-based access control?",
+          "questionIds": [
+            "q4"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f5",
+          "front": "Describe your approach to handling an on-call incident where a critical service is failing in production. How do you balance immediate fixes with the need for post-mortem analysis?",
+          "back": "Prioritizing system recovery (mitigation) over root cause analysis during the active incident.\nUsing logging, metrics, and tracing to identify the blast radius and cause.\nFocusing on blameless post-mortems to improve systems, not individuals.\nDocumenting findings and creating follow-up tickets to address technical debt.\nHow do you keep CI/CD pipelines green while pushing emergency fixes?\nWhat is your strategy for communicating with stakeholders during a major outage?",
+          "questionIds": [
+            "q5"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f6",
+          "front": "When designing a secure REST API for financial services, how do you implement HTTP best practices to protect sensitive transaction data?",
+          "back": "Use of TLS/HTTPS for all data in transit\nImplementation of OAuth2 or API key-based authentication with proper scoping\nUse of HSTS, rate limiting, and input validation to prevent common attacks like XSS or SQL injection\nProper use of HTTP status codes to provide actionable feedback without leaking internal system details\nHow would you handle idempotency for payment requests to prevent double charging?\nHow do you ensure backward compatibility when changing API schemas?",
+          "questionIds": [
+            "q6"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f7",
+          "front": "Walk us through your process for containerizing a Node.js service using Docker and preparing it for deployment to AWS ECS.",
+          "back": "Creating an optimized Dockerfile (using multi-stage builds for smaller image sizes)\nConfiguring environment variables and secrets management\nDefining task definitions and service configurations for ECS\nMonitoring and logging strategy within the AWS ecosystem\nHow do you manage dependency versions to ensure reproducible builds?\nWhat strategies do you use to reduce deployment downtime?",
+          "questionIds": [
+            "q7"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f8",
+          "front": "Given the complexities of financial data, how do you determine when a document database like MongoDB is appropriate versus a relational database?",
+          "back": "Discussion on ACID compliance needs vs. horizontal scalability requirements\nUse of document stores for flexible, schema-less data (e.g., metadata, user logs)\nUse of relational databases for transactional integrity and complex relationships\nConsiderations for data consistency models\nHow do you handle migrations in a MongoDB collection without downtime?\nHow do you model relationships in MongoDB compared to a SQL database?",
+          "questionIds": [
+            "q8"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f9",
+          "front": "What is your philosophy on conducting code reviews, and what are you specifically looking for beyond just passing tests?",
+          "back": "Focus on maintainability, readability, and design patterns\nEnsuring edge cases are handled and tests (Jest) are adequate\nConstructive feedback loop rather than just finding errors\nChecking for adherence to security and performance standards\nHow do you handle a situation where you disagree with a teammate's coding approach?\nHow do you balance the need for speed with the need for high-quality code?",
+          "questionIds": [
+            "q9"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f10",
+          "front": "In what specific architectural scenarios would you favor using GraphQL over REST, and how do you optimize performance in those scenarios?",
+          "back": "Scenario: Reducing over-fetching and under-fetching of data\nScenario: Aggregating data from multiple microservices\nPerformance: Implementing Dataloader or similar patterns to solve N+1 problems\nSecurity: Implementing depth limiting and query cost analysis\nHow do you manage versioning in a GraphQL schema compared to REST?",
+          "questionIds": [
+            "q10"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f11",
+          "front": "How have you utilized Terraform to automate infrastructure provisioning for Kubernetes clusters?",
+          "back": "State management and backend configuration\nModularizing code for reusability across environments (dev/prod)\nManaging Kubernetes manifests or Helm charts via Terraform providers\nPlan/Apply workflow and risk mitigation\nHow do you handle drift between your Terraform code and actual infrastructure state?\nHow do you integrate Terraform into a CI/CD pipeline?",
+          "questionIds": [
+            "q11"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f12",
+          "front": "When building an Express application, how do you handle asynchronous error propagation effectively across your middleware stack?",
+          "back": "Using centralized error-handling middleware\nProper use of try/catch blocks with async/await\nEnsuring unexpected crashes are caught to prevent server termination\nLogging errors with context for observability\nWhat patterns do you use to ensure you don't leak stack traces in production?",
+          "questionIds": [
+            "q12"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        },
+        {
+          "id": "f13",
+          "front": "Describe a scenario where you integrated AWS Lambda into a larger microservices architecture. What was the use case and the outcome?",
+          "back": "Use case: Event-driven processing or async background tasks\nIntegration with other AWS services (e.g., S3 triggers)\nConsiderations for cold starts and execution time limits\nMonitoring via CloudWatch\nHow do you test Lambda functions locally?",
+          "questionIds": [
+            "q13"
+          ],
+          "practice": {
+            "confidence": null,
+            "covered": false,
+            "lastReviewedAt": null
+          }
+        }
+      ],
+      "schedule": {
+        "interviewDays": 7,
+        "days": [
+          {
+            "day": 1,
+            "questions": [
+              "q1",
+              "q2"
+            ]
+          },
+          {
+            "day": 2,
+            "questions": [
+              "q3",
+              "q4"
+            ]
+          },
+          {
+            "day": 3,
+            "questions": [
+              "q5",
+              "q6"
+            ]
+          },
+          {
+            "day": 4,
+            "questions": [
+              "q7",
+              "q8"
+            ]
+          },
+          {
+            "day": 5,
+            "questions": [
+              "q9",
+              "q10"
+            ]
+          },
+          {
+            "day": 6,
+            "questions": [
+              "q11",
+              "q12"
+            ]
+          },
+          {
+            "day": 7,
+            "questions": [
+              "q13"
+            ]
+          }
+        ]
+      },
+      "coverage": {
+        "coveredRequirements": [
+          "Node.js",
+          "Express",
+          "TypeScript",
+          "PostgreSQL",
+          "MongoDB",
+          "JWT",
+          "OAuth 2.0",
+          "Redis",
+          "RabbitMQ",
+          "Docker",
+          "AWS",
+          "ECS",
+          "Lambda",
+          "S3",
+          "Jest",
+          "GraphQL",
+          "Kubernetes",
+          "Terraform",
+          "Design, build and maintain REST APIs",
+          "Model data, write efficient queries and manage migrations",
+          "Implement authentication and authorization",
+          "Build background processing with message queues",
+          "Containerize services and deploy them to AWS",
+          "Write unit and integration tests and keep CI pipelines green",
+          "Add logging, metrics and tracing",
+          "Take part in the on-call rotation",
+          "Strong understanding of REST API design, HTTP and security best practices",
+          "Experience with relational and document databases",
+          "Familiarity with code reviews"
+        ],
+        "missingRequirements": [
+          "Git",
+          "REST"
+        ],
+        "coveragePercent": 94
+      }
+    }
+  ]
+}

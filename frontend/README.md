@@ -17,6 +17,17 @@ The frontend only uses this public URL; it never contains backend API keys, prov
 
 `NEXT_PUBLIC_SITE_URL` (optional) is the public URL of the deployed frontend; link previews (Open Graph / X cards) use it for absolute image URLs. On Vercel the production domain is used when it is unset.
 
+## Demo snapshot
+
+The public `/demo` pages render `data/demo-kits.json`, a static, sanitized copy of the demo account's kits, so they need no sign-in and never call the API. To refresh it after the demo kits change:
+
+```bash
+cd frontend
+DEMO_EMAIL=<demo account email> DEMO_PASSWORD=<demo account password> npm run demo:snapshot
+```
+
+The script logs in to the production API (`DEMO_API_URL` overrides it), fetches the account's kits and writes only the sections the kit UI renders: user ids, emails, job ids and other internal fields are dropped, and practice progress is reset to unrated. The credentials are read from the environment only; never put them in a file. Check the diff (no email addresses or ids) before committing the new JSON; the next deploy serves it.
+
 ## Design system
 
 Colors, radii and shadows are CSS variables in `app/globals.css` (the design tokens) and are mapped to Tailwind names in `tailwind.config.js` (`bg-surface`, `text-muted`, `bg-brand-600`, `text-danger-700`, `rounded-card`, `shadow-raised`, ...). Use the tokens instead of hex values. The brand mark and wordmark live in `components/brand/Logo.js`; the favicon, app icons and the link-preview image are generated from the same mark (`app/icon.svg`, `app/favicon.ico`, `app/apple-icon.png`, `app/opengraph-image.js`).
