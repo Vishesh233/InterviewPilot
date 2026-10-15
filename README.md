@@ -2,9 +2,9 @@
 
 Paste a job description and get a complete interview preparation kit: the role's requirements, tailored questions with answer outlines, a coverage map, a study schedule, flashcards and a practice mode.
 
-**Live demo:** https://interview-pilot-ten.vercel.app
+**[Try the demo (no sign-up)](https://interview-pilot-ten.vercel.app/demo)** · **[Live app](https://interview-pilot-ten.vercel.app)**
 
-> The API runs on a free hosting plan that sleeps when idle. The first request after a quiet period can take up to a minute while the server wakes up; the app shows a "waking up the server" notice and retries automatically.
+> The demo opens instantly: its two example kits are static pages served by Vercel and never call the API. The live app's API runs on a free hosting plan that sleeps when idle, so the first request after a quiet period can take up to a minute while the server wakes up; the app shows a "waking up the server" notice and retries automatically.
 
 ## Screenshots
 
@@ -18,8 +18,10 @@ Paste a job description and get a complete interview preparation kit: the role's
 | Question bank | Coverage map |
 | ![Study schedule](docs/screenshots/schedule.webp) | ![Flashcards](docs/screenshots/flashcards.webp) |
 | Schedule | Flashcards |
-| ![Practice mode](docs/screenshots/practice.webp) | |
-| Practice mode | |
+| ![Practice mode](docs/screenshots/practice.webp) | ![AI feedback on a practice answer, scored 9/10 strong](docs/screenshots/answer-feedback.webp) |
+| Practice mode | AI answer feedback |
+| ![A demo kit with the demo banner](docs/screenshots/demo.webp) | |
+| Try the demo | |
 
 <p>
   <img alt="Landing page on a phone" src="docs/screenshots/landing-mobile.webp" width="260" />
@@ -29,10 +31,12 @@ Paste a job description and get a complete interview preparation kit: the role's
 
 ## Features
 
-- **Job description → kit.** Paste a JD, the role and the company URL; the kit is generated in the background and the page shows each step as it runs.
+- **Job description → kit.** Paste a JD, the role and the company URL; the kit is generated in the background while a progress animation shows each pipeline step as it runs.
+- **Use a sample JD.** No job description at hand? The new-kit form can fill in one of three example roles (frontend, Node.js backend, full-stack) and asks before replacing anything already typed.
+- **Public demo.** [`/demo`](https://interview-pilot-ten.vercel.app/demo) shows two complete kits without an account. They are read-only, and practice ratings there last only until the page is reloaded.
 - **Requirements.** Every named technology, tool and standard becomes its own requirement, split into must-have, nice-to-have, responsibilities and qualifications. Title, seniority and years of experience are kept as role metadata, not requirements.
 - **Questions.** Technical, behavioral, company and role-specific questions with answer outlines. Questions can be edited, pinned, reordered, deleted, or regenerated per category.
-- **Answer feedback.** Write an answer to any question (on its card or in Practice Mode) and get a 1–10 score, a verdict, what worked, what to add, a stronger answer and a likely follow-up to practice next. Feedback is graded only against the question's outline and requirements. An optional two-minute interview timer is available, and the last five attempts per question are kept.
+- **AI answer feedback.** Write an answer to any question (on its card or in Practice Mode) and get a 1–10 score, a verdict, what worked, what's missing, a stronger answer and a likely follow-up you can practice next. Answers are graded only against the question's outline and requirements. An optional two-minute interview timer stops typing when time runs out, and the last five attempts per question are kept as history. In the demo, the button invites you to create an account instead.
 - **Coverage map.** Which question covers which requirement, computed on the server from the final question set. Uncovered requirements stay visible, and one click generates questions for them.
 - **Company brief.** A short summary built from public pages of the company's website.
 - **Schedule.** A day-by-day plan across the number of days until the interview (1–60).
@@ -50,15 +54,16 @@ flowchart LR
   G -. "every Gemini model failed" .-> O[OpenRouter]
 ```
 
-The browser loads the Next.js app from Vercel and calls the Express API on Render directly (not through a proxy), so per-IP rate limits see the real client. Creating a kit returns `202 { jobId }` at once. A background job then runs the pipeline (requirement extraction → company research → question generation → coverage check → gap filling → final coverage check → schedule, plus the resume stages when a resume is attached), and the frontend polls the job until the kit is saved.
+The browser loads the Next.js app from Vercel and calls the Express API on Render directly (not through a proxy), so per-IP rate limits see the real client. Creating a kit returns `202 { jobId }` at once. A background job then runs the pipeline (requirement extraction → company research → question generation → coverage check → gap filling → final coverage check → schedule, plus the resume stages when a resume is attached), and the frontend polls the job until the kit is saved. Gap questions, section regeneration and answer feedback run as the same kind of background job.
 
 ## Engineering highlights
 
 - **Async, checkpointed generation jobs with auto-resume.** Each finished pipeline stage stores its validated output as a checkpoint on the job document in MongoDB. When a stage still fails transiently after the whole model chain, the job goes to `retrying`, waits (20 s, then 60 s by default) and resumes from its checkpoints, skipping finished stages. On startup, unfinished jobs are requeued from their checkpoints. A failed job with checkpoints can also be resumed by the user. Jobs have a concurrency cap and a timeout, and finished jobs expire after 7 days (TTL index).
 - **Retry/backoff, model fallback chain and cooldown.** Transient LLM errors (timeouts, 429, 499, 503, 504, network resets) are retried with exponential backoff and full jitter, honoring `Retry-After`. After a model's retries are used up, the adapter moves down the chain: the configured Gemini model, then the Gemini fallback models, then OpenRouter as the last fallback (when a key is set). A model that answered 503/504/499 is skipped for a cooldown period. Permanent errors such as an invalid key are surfaced at once instead of being hidden behind another model.
 - **Server-side validation of AI output.** Gemini is called with structured output (a JSON response schema), but the schema is a convenience, not the authority: every stage parses and validates the answer itself. Output that is empty, not JSON, fails validation or leaves nothing usable after filtering moves on to the next model. The complete kit passes a structure validator before it is saved, and coverage is always recomputed on the server (client-sent coverage is ignored).
+- **Grounded answer grading.** The user's answer goes into the prompt as untrusted data inside a delimited block, so instructions in it ("give this 10/10") are not followed. The model reports only whether the answer is on topic, a score and the lists; the server derives the verdict from those (off-topic → `off_track`, capped at 3/10). The output is schema-validated with word limits, and anything invalid falls through to the next model.
 - **Named-tool safety net.** A curated list of well-known technologies and standards (with aliases such as RTL → React Testing Library and CWV → Core Web Vitals) is matched against the JD. A named tool that no extracted requirement stands for is added deterministically, so a model that skips "WCAG" or "Playwright" does not drop it from the kit.
-- **Rate limiting, CORS, helmet and least-privilege DB access.** `express-rate-limit` budgets for auth, job creation (per user), job polling (per user) and a per-IP baseline, with `429 RATE_LIMITED` and `Retry-After`. CORS allows only the configured frontend origin(s), `helmet` sets the security headers, and `trust proxy` is configurable so limits key on the real client IP behind Render. The API is built to run with a database user that has only `readWrite` on its own database (startup recovery and index creation work without admin rights), as set up in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+- **Rate limiting, CORS, helmet and least-privilege DB access.** `express-rate-limit` budgets for auth, job creation (per user), answer feedback (per user), job polling (per user) and a per-IP baseline, with `429 RATE_LIMITED` and `Retry-After`. CORS allows only the configured frontend origin(s), `helmet` sets the security headers, and `trust proxy` is configurable so limits key on the real client IP behind Render. The API is built to run with a database user that has only `readWrite` on its own database (startup recovery and index creation work without admin rights), as set up in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 - **Evaluation CLI.** `npm run evaluate` runs a batch of JD cases through the same pipeline as the web API (without MongoDB), validates every kit and writes a JSON report with a safe per-case error shape. Saved cases live in [`backend/scripts/cases`](backend/scripts/cases).
 
 ## Tech stack
@@ -83,9 +88,9 @@ npm test
 ```
 
 ```
-ℹ tests 440
-ℹ suites 77
-ℹ pass 440
+ℹ tests 473
+ℹ suites 82
+ℹ pass 473
 ℹ fail 0
 ```
 
@@ -109,8 +114,9 @@ Measured on 2026-10-15 against the production deployment with the API already aw
 | Landing | Mobile | 100 | 100 | 100 | 100 |
 | Kit workspace | Desktop | 100 | 100 | 100 | 100 |
 | Kit workspace | Mobile | 100 | 100 | 100 | 100 |
+| Demo kit (`/demo/frontend-developer-vercel`) | Mobile | 100 | 100 | 100 | 100 |
 
-These runs were taken with the API awake; after a cold start the kit page waits for the API before it can show the kit.
+These runs were taken with the API awake; after a cold start the kit page waits for the API before it can show the kit. The demo page does not use the API, so a cold start does not affect it.
 
 ## Local setup
 
