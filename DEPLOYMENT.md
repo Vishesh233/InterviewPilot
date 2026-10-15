@@ -8,6 +8,21 @@ Production runs on three managed services:
 | API (Express) | Render, free web service | `backend/` |
 | Database | MongoDB Atlas (free M0 cluster) | – |
 
+## Current deployment
+
+| Part | URL |
+| --- | --- |
+| Frontend (Vercel, production branch `main`) | https://interview-pilot-ten.vercel.app |
+| API (Render, auto-deploys from `main`) | https://interviewpilot-8mtm.onrender.com |
+| Health check | https://interviewpilot-8mtm.onrender.com/api/health |
+
+Production settings that depend on these URLs:
+
+- Render `CORS_ORIGINS=https://interview-pilot-ten.vercel.app`
+- Vercel `NEXT_PUBLIC_API_URL=https://interviewpilot-8mtm.onrender.com`
+
+A push to `main` redeploys both services.
+
 ## Architecture
 
 ```
@@ -68,7 +83,7 @@ release; `engines` allows Node 20+). Render sets `PORT` itself.
 | `MONGODB_DB_NAME` | no | `interviewpilot` | Database name; overrides the one in the `MONGODB_URI` path |
 | `JWT_SECRET` | yes | 64+ random characters (`openssl rand -hex 48`) | Signs session tokens |
 | `GEMINI_API_KEY` | yes | `<your Gemini API key>` | Primary LLM provider |
-| `CORS_ORIGINS` | yes | `https://interviewpilot.vercel.app` | Frontend origin(s) allowed to call the API, comma-separated, exact (no trailing slash) |
+| `CORS_ORIGINS` | yes | `https://interview-pilot-ten.vercel.app` | Frontend origin(s) allowed to call the API, comma-separated, exact (no trailing slash) |
 | `TRUST_PROXY` | yes | `1` | Render puts one proxy in front of the app; makes per-IP rate limits use the real client IP |
 | `GEMINI_MODEL` | no | `gemini-3.1-flash-lite` | First model in the chain (see "Model order") |
 | `GEMINI_FALLBACK_MODELS` | no | `gemini-3.5-flash,gemini-3.8-flash` | Models tried next, in order |
@@ -111,8 +126,8 @@ deterministic named-tool safety net covers most of that gap.
 
 | Name | Required | Example | Purpose |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | yes | `https://interviewpilot-api.onrender.com` | The browser calls the API here directly (no trailing slash) |
-| `NEXT_PUBLIC_SITE_URL` | recommended | `https://interviewpilot.vercel.app` | Absolute URLs for link previews (Open Graph / X cards); Vercel's production domain is used when unset |
+| `NEXT_PUBLIC_API_URL` | yes | `https://interviewpilot-8mtm.onrender.com` | The browser calls the API here directly (no trailing slash) |
+| `NEXT_PUBLIC_SITE_URL` | recommended | `https://interview-pilot-ten.vercel.app` | Absolute URLs for link previews (Open Graph / X cards); Vercel's production domain is used when unset |
 
 `NEXT_PUBLIC_*` values are built into the JavaScript bundle: redeploy after
 changing them. `BACKEND_API_URL` is only for local development (the
