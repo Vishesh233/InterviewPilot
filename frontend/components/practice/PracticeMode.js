@@ -55,7 +55,7 @@ export default function PracticeMode({ token, kitId, onBack }) {
   };
   const move = (direction) => { const next = index + direction; if (next < 0 || next >= items.length) return; setIndex(next); setRevealed(false); };
 
-  if (loading) return <LoadingState detail="The backend is ordering your next practice session." label="Opening Practice Mode" />;
+  if (loading) return <LoadingState detail="Putting your cards in order." label="Opening Practice Mode" />;
   if (error && !session) return <Alert title="Practice Mode is unavailable">{error}</Alert>;
   if (!items.length) return <PracticeEmpty onBack={onBack} />;
   return <div className="space-y-5"><PracticeStats progress={session.progress || {}} /><PracticeCard index={index} item={current} onMove={move} onReveal={() => setRevealed(true)} onUpdate={update} revealed={revealed} saving={saving} total={items.length} />{error && <Alert>{error}</Alert>}<div className="flex flex-col items-center gap-2 text-center"><p className="text-xs text-muted">The order stays fixed while you practice. Reordering puts uncovered cards first, then unrated, then lower confidence.</p><Button disabled={saving} onClick={() => load({ reorder: true })} type="button" variant="quiet"><Icon name="refresh" size={15} />Reorder by priority</Button></div></div>;

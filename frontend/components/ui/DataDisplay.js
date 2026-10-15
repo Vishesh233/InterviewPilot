@@ -6,10 +6,11 @@ export function ProgressBar({ value = 0, className = '', label = 'Progress' }) {
   </div>;
 }
 
-export function Stat({ label, value, detail, tone = 'default' }) {
-  return <div className="rounded-control border border-line bg-subtle px-4 py-4">
-    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{label}</p>
-    <p className={`mt-2 text-2xl font-semibold tracking-tight ${tone === 'green' ? 'text-brand-600' : 'text-ink'}`}>{value}</p>
-    {detail && <p className="mt-1 text-xs text-muted">{detail}</p>}
+// `compact` shrinks the tile on small screens (stat rows above content on mobile).
+export function Stat({ label, value, detail, tone = 'default', compact = false }) {
+  return <div className={`rounded-control border border-line bg-subtle ${compact ? 'px-3 py-2.5 sm:px-4 sm:py-4' : 'px-4 py-4'}`}>
+    <p className={`font-semibold uppercase text-muted ${compact ? 'text-[10px] tracking-[0.1em] sm:text-[11px] sm:tracking-[0.12em]' : 'text-[11px] tracking-[0.12em]'}`}>{label}</p>
+    <p className={`font-semibold tracking-tight ${compact ? 'mt-1 text-lg sm:mt-2 sm:text-2xl' : 'mt-2 text-2xl'} ${tone === 'green' ? 'text-brand-600' : 'text-ink'}`}>{value}</p>
+    {detail && <p className={`mt-1 text-xs text-muted ${compact ? 'hidden sm:block' : ''}`}>{detail}</p>}
   </div>;
 }

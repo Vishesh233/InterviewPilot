@@ -42,7 +42,7 @@ export default function ResumePanel({ kit }) {
   const projects = Array.isArray(analysis.projects) ? analysis.projects : [];
 
   return <div className="space-y-5">
-    <div><p className="eyebrow">Resume match</p><h2 className="mt-2 text-xl font-semibold tracking-tight text-ink">What your resume shows for this role.</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Classified by the backend from the extracted job requirements and your resume only. Nothing is inferred beyond what the resume states.</p></div>
+    <div><p className="eyebrow">Resume match</p><h2 className="mt-2 text-xl font-semibold tracking-tight text-ink">What your resume shows for this role.</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Based only on the job requirements and your resume. Nothing is inferred beyond what the resume states.</p></div>
     <div className="grid gap-3 sm:grid-cols-3"><Stat label="Matched" value={matched.length} tone="green" /><Stat label="Partial" value={partial.length} /><Stat label="Not in resume" value={missing.length} /></div>
     <Card className="p-5 sm:p-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">

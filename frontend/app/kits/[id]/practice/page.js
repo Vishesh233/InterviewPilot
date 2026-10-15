@@ -25,5 +25,5 @@ export default function PracticePage() {
     return () => { active = false; };
   }, [params.id, token]);
   if (loading || !token) return <PageFrame><LoadingState label="Checking your session" /></PageFrame>;
-  return <PageFrame className="max-w-5xl"><div className="mb-7 flex items-center justify-between gap-4"><div><p className="eyebrow">Practice Mode</p><h1 className="mt-2 font-display text-4xl tracking-tight text-ink">Build recall, one card at a time.</h1>{kitLabel && <p className="mt-2 text-sm text-muted">{kitLabel}</p>}</div><Button onClick={() => router.push(`/kits/${encodeURIComponent(params.id)}`)} variant="secondary">Back to kit</Button></div><PracticeMode kitId={params.id} token={token} /></PageFrame>;
+  return <PageFrame className="max-w-5xl"><div className="mb-5 flex items-start justify-between gap-4 sm:mb-7 sm:items-center"><div><p className="eyebrow">Practice Mode</p><h1 className="mt-2 font-display text-2xl tracking-tight text-ink sm:text-4xl">Build recall, one card at a time.</h1>{kitLabel && <p className="mt-2 text-sm text-muted">{kitLabel}</p>}</div><Button onClick={() => router.push(`/kits/${encodeURIComponent(params.id)}`)} variant="secondary">Back to kit</Button></div><PracticeMode kitId={params.id} token={token} /></PageFrame>;
 }
