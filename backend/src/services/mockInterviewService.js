@@ -6,7 +6,7 @@
 // - Every answer is graded by the existing answer-feedback grader against that
 //   question's outline and requirements (answers are untrusted data there).
 // - At most one follow-up per main question, only for an on-topic answer
-//   scoring 4-8, and only when the grader's follow-up passes
+//   scoring 3-8, and only when the grader's follow-up passes
 //   validateFollowUpText; otherwise the next main question is asked.
 // - After the last turn a second LLM step writes the report. It never sees the
 //   raw answers, only the graded results, and its output must reference this
@@ -30,7 +30,9 @@ const MIN_LENGTH = 3;
 const MAX_LENGTH = 5;
 const INACTIVITY_MS = 24 * 60 * 60 * 1000;
 const LIST_LIMIT = 10;
-const FOLLOW_UP_SCORE = { min: 4, max: 8 };
+// The grader scores on-topic but incomplete answers as low as 3; those are
+// the answers a follow-up helps most, so 3 is included.
+const FOLLOW_UP_SCORE = { min: 3, max: 8 };
 const FOLLOW_UP_MAX_WORDS = 30;
 const CATEGORY_ORDER = ['technical', 'role_specific', 'behavioral', 'resume', 'company'];
 const REPORT_LIMITS = { summaryWords: 60, noteWords: 20, reasonWords: 15, maxTopics: 6, maxPracticeNext: 3 };
