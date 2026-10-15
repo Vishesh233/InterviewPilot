@@ -47,7 +47,8 @@ export function Landing() {
     <header className="border-b border-line bg-surface/90 backdrop-blur">
       <div className="container-shell flex min-h-[72px] items-center justify-between gap-4">
         <Link aria-label="InterviewPilot home" className="rounded-control" href="/"><Wordmark /></Link>
-        <nav aria-label="Account" className="flex items-center gap-2">
+        <nav aria-label="Account" className="flex items-center gap-1 sm:gap-2">
+          <LinkButton href="/demo" variant="quiet">Try the demo</LinkButton>
           <LinkButton href="/login" variant="quiet">Sign in</LinkButton>
           <LinkButton className="hidden sm:inline-flex" href="/register" variant="primary">Create an account</LinkButton>
         </nav>
@@ -62,7 +63,8 @@ export function Landing() {
           <p className="mt-6 max-w-xl text-base leading-7 text-muted sm:text-lg sm:leading-8">InterviewPilot reads the job description and the company’s public website, then builds your prep kit: the requirements that matter, questions grounded in them, and a plan up to interview day.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <LinkButton href="/register" variant="primary">Create your first kit<Icon name="arrow" size={16} /></LinkButton>
-            <LinkButton href="/login">I already have an account</LinkButton>
+            <LinkButton href="/demo">Try the demo</LinkButton>
+            <LinkButton href="/login" variant="quiet">I already have an account</LinkButton>
           </div>
         </div>
         <ExampleKit />

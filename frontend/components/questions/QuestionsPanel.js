@@ -25,7 +25,7 @@ function QuestionEditor({ question, onCancel, onSave, saving }) {
 
 // Compact, collapsible card: the question is always visible; the answer
 // outline, the requirements it covers and why it matters open on demand.
-function QuestionCard({ question, index, number, total, expanded, onToggle, canReorder, editing, saving, onEdit, onCancel, onSave, onPin, onMove, onDelete }) {
+function QuestionCard({ question, index, number, total, expanded, onToggle, canReorder, editing, saving, onEdit, onCancel, onSave, onPin, onMove, onDelete, readOnly }) {
   const points = answerPoints(question);
   const detailsId = `question-details-${question.id}`;
   const open = expanded || editing;
@@ -48,17 +48,18 @@ function QuestionCard({ question, index, number, total, expanded, onToggle, canR
       </>}
     {!editing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
       <Button aria-controls={detailsId} aria-expanded={open} onClick={onToggle} type="button" variant="quiet"><Icon className={`transition-transform ${open ? 'rotate-180' : ''}`} name="down" size={16} /><span className="sm:hidden">Answer</span><span className="hidden sm:inline">{open ? 'Hide answer outline' : 'Show answer outline'}</span></Button>
-      <div className="flex items-center gap-0.5 sm:gap-1 [&>button]:px-2.5 sm:[&>button]:px-3">
+      {!readOnly && <div className="flex items-center gap-0.5 sm:gap-1 [&>button]:px-2.5 sm:[&>button]:px-3">
         {canReorder && <><Button aria-label={`Move ${question.id} up`} disabled={index === 0 || saving} onClick={() => onMove(-1)} title="Move up" variant="quiet"><Icon className="rotate-[-90deg]" name="arrow" size={15} /></Button><Button aria-label={`Move ${question.id} down`} disabled={index === total - 1 || saving} onClick={() => onMove(1)} title="Move down" variant="quiet"><Icon className="rotate-90" name="arrow" size={15} /></Button></>}
         <Button aria-label={`Edit ${question.id}`} onClick={onEdit} title="Edit question" variant="quiet"><Icon name="edit" size={15} /></Button>
         <Button aria-label={`Pin ${question.id}`} aria-pressed={question.pinned === true} onClick={onPin} title={question.pinned ? 'Unpin question' : 'Pin question'} variant="quiet"><Icon className={question.pinned ? 'text-brand-600' : ''} name="pin" size={15} /></Button>
         <Button aria-label={`Delete ${question.id}`} disabled={saving || total <= 1} onClick={onDelete} title={total <= 1 ? 'At least one question is required' : 'Delete question'} variant="quiet"><Icon name="trash" size={15} /></Button>
-      </div>
+      </div>}
     </div>}
   </Card>;
 }
 
-export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit }) {
+// `readOnly` (demo kits) hides reorder, edit, pin and delete.
+export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, onDelete, savingId, editingId, onCancelEdit, readOnly = false }) {
   const questions = kit?.questions || [];
   const resumeCount = questions.filter(isResumeQuestion).length;
   const [filter, setFilter] = useState('all');
@@ -91,6 +92,6 @@ export default function QuestionsPanel({ kit, onEdit, onPin, onReorder, onSave, 
     </div>}
     {questions.length === 0
       ? <Card className="p-8 text-center text-sm text-muted">No questions were generated for this kit.</Card>
-      : visible.map(({ question, index }) => <QuestionCard canReorder={filter === 'all'} editing={editingId === question.id} expanded={expandedIds.has(question.id)} index={index} key={question.id} number={index + 1} onCancel={onCancelEdit} onDelete={() => onDelete(question)} onEdit={() => onEdit(question.id)} onMove={(direction) => onReorder(index, direction)} onPin={() => onPin(question)} onSave={(changes) => onSave(question.id, changes)} onToggle={() => toggle(question.id)} question={question} saving={savingId === question.id} total={questions.length} />)}
+      : visible.map(({ question, index }) => <QuestionCard canReorder={!readOnly && filter === 'all'} readOnly={readOnly} editing={editingId === question.id} expanded={expandedIds.has(question.id)} index={index} key={question.id} number={index + 1} onCancel={onCancelEdit} onDelete={() => onDelete(question)} onEdit={() => onEdit(question.id)} onMove={(direction) => onReorder(index, direction)} onPin={() => onPin(question)} onSave={(changes) => onSave(question.id, changes)} onToggle={() => toggle(question.id)} question={question} saving={savingId === question.id} total={questions.length} />)}
   </div>;
 }
