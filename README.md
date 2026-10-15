@@ -10,7 +10,7 @@ Paste a job description and get a complete interview preparation kit: the role's
 
 | | |
 | --- | --- |
-| ![Landing page](docs/screenshots/landing.webp) | ![Dashboard with a saved kit](docs/screenshots/dashboard.webp) |
+| ![Landing page](docs/screenshots/landing.webp) | ![Dashboard with two saved kits](docs/screenshots/dashboard.webp) |
 | Landing page | Dashboard |
 | ![Kit generation in progress](docs/screenshots/new-kit-progress.webp) | ![Company brief](docs/screenshots/kit-brief.webp) |
 | Kit generation progress | Company brief |
