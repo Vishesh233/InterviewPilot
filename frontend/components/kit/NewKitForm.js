@@ -9,6 +9,8 @@ import { isActiveJob } from '@/lib/jobs';
 import { useJobPolling } from '@/components/jobs/useJobPolling';
 import { JobFailure } from '@/components/jobs/JobStatus';
 import { GenerationProgress } from '@/components/loading/GenerationProgress';
+import { SamplePicker } from '@/components/kit/SamplePicker';
+import { SAMPLE_JOBS } from '@/lib/sampleJobs';
 import { Alert, Badge, Button, Card, LoadingState } from '@/components/ui/Primitives';
 import { Icon } from '@/components/ui/Icon';
 
@@ -161,6 +163,23 @@ export default function NewKitForm() {
 
   const removeResume = () => { setResume(null); setResumeError(''); };
 
+  // "Use a sample": fills role, job description and company URL. Text the user
+  // typed is only replaced after an inline confirmation.
+  const [pendingSample, setPendingSample] = useState(null);
+  const applySample = (sample) => {
+    setForm((current) => ({ ...current, jobRole: sample.jobRole, jobDescription: sample.jobDescription, companyUrl: sample.companyUrl }));
+    setErrors({});
+    setPendingSample(null);
+    requestAnimationFrame(() => document.getElementById('jobDescription')?.focus());
+  };
+  const chooseSample = (sample) => {
+    const fields = [form.jobRole, form.jobDescription, form.companyUrl];
+    const empty = fields.every((value) => !value.trim());
+    const untouchedSample = SAMPLE_JOBS.some((item) => item.jobRole === form.jobRole && item.jobDescription === form.jobDescription && item.companyUrl === form.companyUrl);
+    if (empty || untouchedSample) applySample(sample);
+    else setPendingSample(sample);
+  };
+
   const validate = () => {
     const next = {};
     if (!form.jobRole.trim()) next.jobRole = 'Add the job role so we can target the right position.';
@@ -235,6 +254,7 @@ export default function NewKitForm() {
     {failedJob && <JobFailure className="mt-7" job={failedJob} onResume={resumeFailedJob} onStartOver={startGeneration} resuming={resuming} />}
     {failedJob && resumeLost && <Alert className="mt-3" tone="info" title="Resume not kept">The resume you attached is not kept after a reload. Attach it again before you start over.</Alert>}
     {notFound && <Alert className="mt-7" title="Generation not found">{pollError} Your input is below if you want to start again.</Alert>}
+    <SamplePicker onCancel={() => setPendingSample(null)} onChoose={chooseSample} onConfirm={() => applySample(pendingSample)} pending={pendingSample} />
     <FormFields errors={errors} form={form} onSubmit={submit} onUpdate={update} onCancel={() => router.push('/dashboard')} error={error} onRemoveResume={removeResume} onResumeSelected={onResumeSelected} readingResume={readingResume} resume={resume} resumeError={resumeError} /></div><CreateKitAside /></div></div></PageFrame>;
 }
 
