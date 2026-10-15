@@ -29,7 +29,7 @@ The kit gains two optional sections — `resume` (file metadata only) and `resum
 
 ## Background generation jobs
 
-Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/gaps`) and section regeneration (`POST /api/kits/:id/regenerate`) run as background jobs, because a generation can take minutes and the frontend proxy cuts requests at 30 s. Each endpoint still validates its input synchronously (bad input → 400; no gaps / nothing to regenerate → 409), then answers `202 { jobId }`. A second request of the same type for the same user (and kit) while one is active gets `409 JOB_ALREADY_RUNNING` with the existing `jobId`.
+Kit generation (`POST /api/interview-prep`), gap questions (`POST /api/kits/:id/gaps`) and section regeneration (`POST /api/kits/:id/regenerate`) run as background jobs, because a generation can take minutes, longer than a request should stay open (the local-development `/api/proxy` rewrite cuts requests at 30 s). Each endpoint still validates its input synchronously (bad input → 400; no gaps / nothing to regenerate → 409), then answers `202 { jobId }`. A second request of the same type for the same user (and kit) while one is active gets `409 JOB_ALREADY_RUNNING` with the existing `jobId`.
 
 - `GET /api/jobs/:id` (owner only, otherwise 404) returns `type, status (queued | running | retrying | succeeded | failed), stage, stageIndex, stageCount, kitId, error { code, message, stage }, resumeCount, nextRetryAt, canResume, modelsUsed, createdAt, updatedAt`.
 - `POST /api/jobs/:id/resume` requeues an owned `failed` job that has checkpoints from its failed stage (409 otherwise).
