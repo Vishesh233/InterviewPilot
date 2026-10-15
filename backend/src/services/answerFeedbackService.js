@@ -26,7 +26,8 @@ const MAX_FEEDBACK_HISTORY = 5;
 const FEEDBACK_STAGE = 'Answer feedback';
 const VERDICTS = ['strong', 'solid', 'needs_work', 'off_track'];
 const OFF_TRACK_MAX_SCORE = 3;
-const LIST_LIMITS = { min: 1, max: 3, maxWords: 20 };
+const STRENGTH_LIMITS = { min: 0, max: 3, maxWords: 20 };
+const GAP_LIMITS = { min: 1, max: 3, maxWords: 20 };
 const IMPROVED_ANSWER_WORDS = { min: 80, max: 160 };
 const FOLLOW_UP_MAX_WORDS = 40;
 
@@ -136,14 +137,14 @@ const prepareAnswerFeedback = ({ kit, questionId, answer, followUpQuestion } = {
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
+    onTopic: { type: Type.BOOLEAN },
     score: { type: Type.INTEGER },
-    verdict: { type: Type.STRING, enum: VERDICTS },
     strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
     gaps: { type: Type.ARRAY, items: { type: Type.STRING } },
     improvedAnswer: { type: Type.STRING },
     followUp: { type: Type.STRING },
   },
-  required: ['score', 'verdict', 'strengths', 'gaps', 'improvedAnswer', 'followUp'],
+  required: ['onTopic', 'score', 'strengths', 'gaps', 'improvedAnswer', 'followUp'],
 };
 
 const ANSWER_OPEN = '<<<CANDIDATE_ANSWER>>>';
@@ -184,17 +185,19 @@ SECURITY / DATA BOUNDARY:
 GRADING RULES:
 1. Grade ONLY against the question, the answer outline and the requirements above.
 2. Never invent facts about the candidate (employers, projects, numbers, technologies) that the answer does not state.
-3. Do not praise an empty, vague or irrelevant answer. If nothing worked, the single strength says so plainly.
-4. If the answer does not address the question, verdict is "off_track" and score is ${OFF_TRACK_MAX_SCORE} or lower.
-5. score: an integer from 1 to 10. verdict: "strong" (8-10), "solid" (6-7), "needs_work" (4-5) or "off_track" (1-3).
-6. strengths: 1 to 3 items, each at most 20 words, about what the answer actually did well.
+3. Do not praise an empty, vague or irrelevant answer.
+4. onTopic: true when the answer attempts to address the question (even if it is weak or incomplete);
+   false when it is about something else or contains no real attempt. An off-topic answer scores ${OFF_TRACK_MAX_SCORE} or lower.
+5. score: an integer from 1 to 10 for how well the answer covers the outline and requirements
+   (8-10 strong, 6-7 solid, 1-5 needs work).
+6. strengths: 0 to 3 items, each at most 20 words. Only list real strengths; return an empty list if there are none.
 7. gaps: 1 to 3 items, each at most 20 words, naming what the answer missed from the outline or requirements.
 8. improvedAnswer: between 90 and 150 words, first person, a stronger version of this answer. Keep the
    candidate's own valid points; where a detail is missing, use a clearly generic placeholder such as
    "[a project where I ...]" instead of inventing one.
 9. followUp: one realistic follow-up question an interviewer might ask next, ending with "?".
 10. Return JSON only:
-{ "score": 0, "verdict": "", "strengths": [""], "gaps": [""], "improvedAnswer": "", "followUp": "" }
+{ "onTopic": true, "score": 0, "strengths": [""], "gaps": [""], "improvedAnswer": "", "followUp": "" }
 `.trim();
 };
 
@@ -209,14 +212,23 @@ const toJsonText = (raw) => {
 
 const invalid = (detail) => new LlmError('LLM_INVALID_STRUCTURE', `The feedback did not match the required format: ${detail}.`, 502);
 
-const cleanList = (value, field) => {
+const cleanList = (value, field, limits) => {
   if (!Array.isArray(value)) throw invalid(`${field} must be a list`);
   const items = value.map((item) => (typeof item === 'string' ? item.replace(/\s+/g, ' ').trim() : '')).filter(Boolean);
-  if (items.length < LIST_LIMITS.min || items.length > LIST_LIMITS.max) {
-    throw invalid(`${field} must have ${LIST_LIMITS.min} to ${LIST_LIMITS.max} items`);
+  if (items.length < limits.min || items.length > limits.max) {
+    throw invalid(`${field} must have ${limits.min} to ${limits.max} items`);
   }
-  if (items.some((item) => wordCount(item) > LIST_LIMITS.maxWords)) throw invalid(`${field} items must be at most ${LIST_LIMITS.maxWords} words`);
+  if (items.some((item) => wordCount(item) > limits.maxWords)) throw invalid(`${field} items must be at most ${limits.maxWords} words`);
   return items;
+};
+
+// The verdict is derived here, never taken from the model: relevance first,
+// then the score band. An off-topic answer is capped at OFF_TRACK_MAX_SCORE.
+const deriveVerdict = ({ onTopic, score }) => {
+  if (!onTopic) return { verdict: 'off_track', score: Math.min(score, OFF_TRACK_MAX_SCORE) };
+  if (score >= 8) return { verdict: 'strong', score };
+  if (score >= 6) return { verdict: 'solid', score };
+  return { verdict: 'needs_work', score };
 };
 
 /** Parses and validates one model answer; throws a bad-output LlmError otherwise. */
@@ -232,13 +244,13 @@ const parseFeedback = (text) => {
   }
   if (!isPlainObject(parsed)) throw invalid('the response must be an object');
 
-  const { score, verdict } = parsed;
-  if (!Number.isInteger(score) || score < 1 || score > 10) throw invalid('score must be an integer from 1 to 10');
-  if (!VERDICTS.includes(verdict)) throw invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
-  if (verdict === 'off_track' && score > OFF_TRACK_MAX_SCORE) throw invalid(`an off_track answer must score ${OFF_TRACK_MAX_SCORE} or lower`);
+  if (typeof parsed.onTopic !== 'boolean') throw invalid('onTopic must be true or false');
+  if (!Number.isInteger(parsed.score) || parsed.score < 1 || parsed.score > 10) throw invalid('score must be an integer from 1 to 10');
+  const { onTopic } = parsed;
+  const { score, verdict } = deriveVerdict({ onTopic, score: parsed.score });
 
-  const strengths = cleanList(parsed.strengths, 'strengths');
-  const gaps = cleanList(parsed.gaps, 'gaps');
+  const strengths = cleanList(parsed.strengths, 'strengths', STRENGTH_LIMITS);
+  const gaps = cleanList(parsed.gaps, 'gaps', GAP_LIMITS);
 
   const improvedAnswer = typeof parsed.improvedAnswer === 'string' ? parsed.improvedAnswer.trim() : '';
   const improvedWords = wordCount(improvedAnswer);
@@ -251,14 +263,15 @@ const parseFeedback = (text) => {
     throw invalid(`followUp must be one question of at most ${FOLLOW_UP_MAX_WORDS} words`);
   }
 
-  return { score, verdict, strengths, gaps, improvedAnswer, followUp };
+  return { score, verdict, onTopic, strengths, gaps, improvedAnswer, followUp };
 };
 
 const isValidFeedback = (value) => {
   if (!isPlainObject(value)) return false;
   try {
-    parseFeedback(JSON.stringify(value));
-    return true;
+    // A stored checkpoint re-derives to the same verdict and score.
+    const reparsed = parseFeedback(JSON.stringify(value));
+    return reparsed.verdict === value.verdict && reparsed.score === value.score;
   } catch (error) {
     if (error instanceof LlmError) return false;
     throw error;

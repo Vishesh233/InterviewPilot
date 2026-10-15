@@ -24,7 +24,9 @@ function VerdictBadge({ verdict }) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${className}`}>{label}</span>;
 }
 
+// Hidden when empty: "What worked" may have no items for an off-topic or empty answer.
 function FeedbackList({ title, items, icon, iconClass }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
   return <div><p className={sectionLabel}>{title}</p><ul className="mt-2 space-y-2">{items.map((item, index) => <li className="flex gap-2 text-sm leading-5 text-ink" key={index}><Icon className={`mt-0.5 shrink-0 ${iconClass}`} name={icon} size={14} />{item}</li>)}</ul></div>;
 }
 
