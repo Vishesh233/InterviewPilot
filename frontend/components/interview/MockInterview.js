@@ -305,10 +305,12 @@ export default function MockInterview({ token, kitId }) {
   const question = view === 'interview' ? session?.currentQuestion : null;
   // Focus the answer box for each new question (the chat log, role="log",
   // announces the new interviewer message itself).
+  // Runs again when the box unlocks, since a disabled box cannot take focus.
+  const answerLocked = Boolean(pending);
   useEffect(() => {
-    if (!question) return;
+    if (!question || answerLocked) return;
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [question?.turnIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [question?.turnIndex, answerLocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reloadSession = async (sessionId) => {
     const next = (await api.getMockInterview(token, sessionId)).session;
@@ -320,17 +322,24 @@ export default function MockInterview({ token, kitId }) {
   const onTurnFinished = async (job) => {
     const done = pending;
     clearPendingTurn(session.id);
-    setPending(null);
     if (job.status === 'succeeded') {
-      setAnswer('');
+      // The answer box stays locked (pending) until the next question has
+      // loaded, so the old question is never shown with an open box.
       try {
         const next = await reloadSession(session.id);
-        if (next.status === 'completed') setAnnouncement(next.report ? `Interview complete. Overall score ${next.report.overallScore} out of 10.` : 'Interview complete. The report is unavailable.');
+        // The chat log announces the next question; the status keeps only completion.
+        setAnnouncement(next.status === 'completed'
+          ? (next.report ? `Interview complete. Overall score ${next.report.overallScore} out of 10.` : 'Interview complete. The report is unavailable.')
+          : '');
       } catch (error) {
         setTurnError(messageOf(error, 'Your answer was reviewed, but the interview could not be reloaded. Refresh the page.'));
+      } finally {
+        setAnswer('');
+        setPending(null);
       }
       return;
     }
+    setPending(null);
     // Keep the answer so it can be sent again.
     setAnswer(done?.answer || '');
     const message = jobFailureMessage(job.error);
